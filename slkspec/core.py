@@ -30,13 +30,13 @@ class SLKFileSystem(AbstractFileSystem):
             loop=loop,
             **storage_options,
         )
-        if local_cache is None and os.environ["SLK_CACHE"] is None:
-            print(
+        if local_cache is None and os.environ.get("SLK_CACHE", None) is None:
+            raise KeyError(
                 "Local cache should be given. As an alternative set environment variable SLK_CACHE."
             )
         elif local_cache is not None:
             self.local_cache = local_cache
-        elif os.environ["SLK_CACHE"] is not None:
+        elif os.environ.get("SLK_CACHE", None) is not None:
             self.local_cache = os.environ["SLK_CACHE"]
         self.client_kwargs = client_kwargs or {}
 
