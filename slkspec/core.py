@@ -94,7 +94,7 @@ class SLKFileSystem(AbstractFileSystem):
         cache_options=None,
         **kwargs,
     ):
-        local_path = "/scratch/m/m300408/retrival"
+        local_path = os.environ["SLK_CACHE"]
         path = path.replace("slk://", "")
         try:
             print("local path")
