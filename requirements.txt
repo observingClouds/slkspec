@@ -1,0 +1,4 @@
+fsspec>=0.9.0
+aiohttp
+git+https://gitlab.dkrz.de/hsm-tools/pyslk.git@master#egg=pyslk
+git+https://github.com/d70-t/preffs.git@main#egg=preffs

@@ -1,0 +1,12 @@
+name: slkspec
+channels:
+  - conda-forge
+dependencies:
+  - python
+  - pandas
+  - xarray
+  - zarr
+  - fastparquet
+  - pip
+  - pip:
+    - -r requirements.txt
