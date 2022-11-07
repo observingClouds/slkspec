@@ -63,8 +63,8 @@ class SLKFileSystem(AbstractFileSystem):
     def cat_file(self, path, start=None, end=None):
         path = path.replace("slk://", "")
         try:
-            print("local path")
             f = open(self.local_cache + path, "rb")
+            print(f"{path} found locally.")
             if start is not None and end is not None:
                 f.seek(start)
                 bytes = f.read(end - start)
@@ -72,7 +72,7 @@ class SLKFileSystem(AbstractFileSystem):
             else:
                 return f
         except FileNotFoundError:
-            print("retrieval")
+            print(f"{path} needs to be retrieved from tape.")
             self._get_file(self.local_cache + os.path.dirname(path), path)
             f = open(self.local_cache + path, "rb")
             if start is not None and end is not None:
