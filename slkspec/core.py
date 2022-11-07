@@ -103,28 +103,3 @@ class SLKFileSystem(AbstractFileSystem):
             print("retrieval")
             self._get_file(local_path + os.path.dirname(path), path)
             return open(local_path + path, "rb")
-
-
-#        return SLKBufferedFile(
-#            self,
-#            path,
-#            mode,
-#            block_size,
-#            autocommit,
-#            cache_options=cache_options,
-#            **kwargs
-#        )
-#
-# class SLKBufferedFile(AbstractBufferedFile):
-#    def __init__(self, *args, **kwargs):
-#        super(SLKBufferedFile, self).__init__(*args, **kwargs)
-#        self.__content = None
-#
-#    def _fetch_range(self, start, end):
-#        if self.__content is None:
-#            self.__content = self.fs.cat_file(self.path)
-#        content = self.__content[start:end]
-#        if "b" not in self.mode:
-#            return content.decode("utf-8")
-#        else:
-#            return content
