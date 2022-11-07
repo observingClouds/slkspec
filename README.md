@@ -1,6 +1,8 @@
 # slkspec
 
-This is work in progress!
+This is work in progress! This repository showcases how the tape archive can be integrated into the scientific workflow.
+
+Pull requests are welcomed!
 
 ```python
 import fsspec
@@ -10,6 +12,15 @@ with fsspec.open("slk://arch/project/user/file", "r") as f:
 ```
 
 ## Usage in combination with preffs
+### Installation of additional requirements
+```
+git clone git@github.com:observingClouds/slkspec.git
+cd slkspec
+mamba env create
+pip install .
+```
+
+### Loading dataset
 
 Set location for tape archive retrievals on local machine
 ```bash
@@ -26,3 +37,7 @@ import xarray as xr
 ds=xr.open_zarr(f"preffs::/path/to/preffs/data.preffs", storage_options={"preffs":{"prefix":"slk:///arch/<project>/<user>/slk/archive/prefix/"}
 ```
 Now only those files are retrieved from tape which are needed for any requested dataset operation. In the beginning only the file containing the metadata (e.g. .zattrs, .zmetadata) and coordinates are requested (e.g. time). After the files have been retrieved once, they are saved at the path given in `SLK_CACHE` and accessed directly from there.
+
+## Current limitations (among others)
+- tape retrievals are currently not combined, leading to single/inefficient requests
+- tape retrievals are done within the currently selected compute resources, which might not be needed for a simple tape retrieval
