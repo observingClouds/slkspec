@@ -17,6 +17,7 @@ with fsspec.open("slk://arch/project/user/file", "r") as f:
 git clone git@github.com:observingClouds/slkspec.git
 cd slkspec
 mamba env create
+mamba activate slkspec
 pip install .
 ```
 
