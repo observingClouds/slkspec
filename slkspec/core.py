@@ -1,17 +1,8 @@
 import logging
-import io
 import os
-import weakref
-from hashlib import md5
-from urllib.parse import urlparse
-from pyslk import pyslk as pslk
-import pyslk
 
-import aiohttp
-from fsspec.asyn import AsyncFileSystem, _run_coros_in_chunks, sync, sync_wrapper
-from fsspec.exceptions import FSTimeoutError
-from fsspec.spec import AbstractBufferedFile, AbstractFileSystem
-from fsspec.utils import tokenize
+from fsspec.spec import AbstractFileSystem
+from pyslk import pyslk as pslk
 
 logger = logging.getLogger("slkspec")
 
@@ -40,7 +31,9 @@ class SLKFileSystem(AbstractFileSystem):
             **storage_options,
         )
         if local_cache is None and os.environ["SLK_CACHE"] is None:
-            print("Local cache should be given. As an alternative set environment variable SLK_CACHE.")
+            print(
+                "Local cache should be given. As an alternative set environment variable SLK_CACHE."
+            )
         elif local_cache is not None:
             self.local_cache = local_cache
         elif os.environ["SLK_CACHE"] is not None:
@@ -48,13 +41,19 @@ class SLKFileSystem(AbstractFileSystem):
         self.client_kwargs = client_kwargs or {}
 
     def ls(self, path, detail=True, **kwargs):
-        filelist = pslk.slk_list(path).split('\n')
+        filelist = pslk.slk_list(path).split("\n")
         detail_list = []
         types = {"d": "directory", "-": "file"}
         for file_entry in filelist[:-2]:
-            entry = {"name": path + "/" + file_entry.split(" ")[-1], #this will fail if filenames contains whitespaces
-             "size": None, # sizes are human readable not in bytes
-             "type": types[file_entry[0]]}
+            entry = {
+                "name": path
+                + "/"
+                + file_entry.split(" ")[
+                    -1
+                ],  # this will fail if filenames contains whitespaces
+                "size": None,  # sizes are human readable not in bytes
+                "type": types[file_entry[0]],
+            }
             detail_list.append(entry)
         if detail:
             return detail_list
@@ -62,29 +61,29 @@ class SLKFileSystem(AbstractFileSystem):
             return [d["name"] for d in detail_list]
 
     def cat_file(self, path, start=None, end=None):
-        path = path.replace("slk://","")
+        path = path.replace("slk://", "")
         try:
             print("local path")
-            f = open(self.local_cache+path,"rb")
+            f = open(self.local_cache + path, "rb")
             if start is not None and end is not None:
                 f.seek(start)
-                bytes = f.read(end-start)
+                bytes = f.read(end - start)
                 return bytes
             else:
                 return f
         except FileNotFoundError:
             print("retrieval")
-            self._get_file(self.local_cache+os.path.dirname(path), path)
-            f = open(self.local_cache+path,"rb")
+            self._get_file(self.local_cache + os.path.dirname(path), path)
+            f = open(self.local_cache + path, "rb")
             if start is not None and end is not None:
                 f.seek(start)
-                bytes = f.read(end-start)
+                bytes = f.read(end - start)
                 return bytes
             else:
                 return f
 
     def _get_file(self, lpath, rpath, **kwargs):
-        pslk.slk_retrieve(rpath,lpath)
+        pslk.slk_retrieve(rpath, lpath)
 
     def _open(
         self,
@@ -93,17 +92,18 @@ class SLKFileSystem(AbstractFileSystem):
         block_size=None,
         autocommit=True,
         cache_options=None,
-        **kwargs
+        **kwargs,
     ):
         local_path = "/scratch/m/m300408/retrival"
-        path=path.replace("slk://","")
+        path = path.replace("slk://", "")
         try:
             print("local path")
-            return open(local_path+path,"rb")
+            return open(local_path + path, "rb")
         except FileNotFoundError:
             print("retrieval")
-            self._get_file(local_path+os.path.dirname(path), path)
-            return open(local_path+path, "rb")
+            self._get_file(local_path + os.path.dirname(path), path)
+            return open(local_path + path, "rb")
+
 
 #        return SLKBufferedFile(
 #            self,
@@ -115,7 +115,7 @@ class SLKFileSystem(AbstractFileSystem):
 #            **kwargs
 #        )
 #
-#class SLKBufferedFile(AbstractBufferedFile):
+# class SLKBufferedFile(AbstractBufferedFile):
 #    def __init__(self, *args, **kwargs):
 #        super(SLKBufferedFile, self).__init__(*args, **kwargs)
 #        self.__content = None

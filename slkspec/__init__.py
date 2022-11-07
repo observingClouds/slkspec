@@ -1,7 +1,7 @@
-from .core import SLKFileSystem
 from fsspec import register_implementation
 
 from . import _version
+from .core import SLKFileSystem
 
 __version__ = _version.get_versions()["version"]
 
