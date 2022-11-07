@@ -15,6 +15,10 @@ Set location for tape archive retrievals on local machine
 ```bash
 export SLK_CACHE="/path/to/local/cache/directory/"
 ```
+Load the slk module
+```bash
+module load slk
+```
 
 Open parquet referenced zarr-file
 ```python
