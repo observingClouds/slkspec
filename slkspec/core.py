@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 
 from fsspec.spec import AbstractFileSystem
 from pyslk import pyslk as pslk
@@ -60,11 +61,34 @@ class SLKFileSystem(AbstractFileSystem):
         else:
             return [d["name"] for d in detail_list]
 
-    def cat_file(self, path, start=None, end=None):
+    def cat_file(self, path, start=None, end=None, touch=False):
+        """Get file content
+
+        Inputs
+        ------
+        path : str
+          file to open
+        start : int
+          seek position within file, optional
+        end : int
+          end position of file read, optional
+        touch : bool
+          switch to update file modification and access times of local
+          files at every request. This option might be helpful to
+          keep retrievals from tape to a minimum and prevent often
+          used files from being garbage collected.
+
+        Returns
+        -------
+        - bytes if start and end are given
+        - file object otherwise
+        """
         path = path.replace("slk://", "")
         try:
             f = open(self.local_cache + path, "rb")
             print(f"{path} found locally.")
+            if touch:
+                Path(path).touch()
             if start is not None and end is not None:
                 f.seek(start)
                 bytes = f.read(end - start)
