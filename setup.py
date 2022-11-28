@@ -24,8 +24,18 @@ setuptools.setup(
     python_requires=">=3.7",
     install_requires=[
         "fsspec>=0.9.0",
-        # "pyslk @ git+https://gitlab.dkrz.de/hsm-tools/pyslk.git@master"
+        "pyslk @ git+https://gitlab.dkrz.de/hsm-tools/pyslk.git@master",
     ],
+    extras_require={
+        "tests": [
+            "mypy",
+            "black",
+        ],
+        "preffs": [
+            "preffs @ git+https://github.com/observingClouds/preffs.git@slkspec_patch",
+            "aiohttp",
+        ],
+    },
     entry_points={
         "fsspec.specs": [
             "slk=slkspec.SLKFileSystem",
