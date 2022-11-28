@@ -1,4 +1,0 @@
-fsspec>=0.9.0
-aiohttp
-pyslk @ git+https://gitlab.dkrz.de/hsm-tools/pyslk.git@master
-preffs @ git+https://github.com/observingClouds/preffs.git@slkspec_patch

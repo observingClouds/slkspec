@@ -25,7 +25,10 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     python_requires=">=3.7",
-    install_requires=requirements,
+    install_requires=[
+        "fsspec>=0.9.0",
+        # "pyslk @ git+https://gitlab.dkrz.de/hsm-tools/pyslk.git@master"
+    ],
     entry_points={
         "fsspec.specs": [
             "slk=slkspec.SLKFileSystem",
