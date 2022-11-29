@@ -48,7 +48,7 @@ class SLKMock:
 
 
 def create_data(variable_name: str, size: int) -> xr.Dataset:
-    """Create a netcdf dataset."""
+    """Create a xarray dataset."""
     coords: dict[str, np.ndarray] = {}
     coords["x"] = np.linspace(-10, -5, size)
     coords["y"] = np.linspace(120, 125, size)
