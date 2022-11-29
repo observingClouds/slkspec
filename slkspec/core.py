@@ -193,7 +193,7 @@ class SLKFile(io.IOBase):
 
     @staticmethod
     def seekable() -> Literal[True]:
-        """Comptibility method."""
+        """Compatibility method."""
         return True
 
     def read(self, size: int = -1) -> AnyStr:
