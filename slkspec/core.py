@@ -178,8 +178,7 @@ class SLKFile(io.IOBase):
 
     def seek(self, target: int) -> int:  # type: ignore
         if self._file_obj is None:
-            return self._file_obj.seek(target)  # type: ignore
-        self._cache_files()
+             self._cache_files()
         return self._file_obj.seek(target)
 
     @staticmethod
