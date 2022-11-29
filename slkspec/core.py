@@ -33,7 +33,9 @@ logger.setLevel(logging.INFO)
 
 MAX_RETRIES = 2
 FileQueue: Queue[Tuple[str, str]] = Queue(maxsize=-1)
-FileInfo = TypedDict("FileInfo", {"name": str, "size": Literal[None], "type": str})
+FileInfo = TypedDict(
+    "FileInfo", {"name": str, "size": Literal[None], "type": str}
+)
 _retrieval_lock = threading.Lock()
 
 
@@ -73,7 +75,8 @@ class SLKFile(io.IOBase):
         import ffspec
         import xarray as xr
 
-        url = fsspec.open("slk:////arch/bb1203/data.nc", slk_cache="/scratch/b/b12346").open()
+        url = fsspec.open("slk:////arch/bb1203/data.nc",
+                          slk_cache="/scratch/b/b12346").open()
         dset = xr.open_dataset(url)
 
     """
@@ -113,6 +116,7 @@ class SLKFile(io.IOBase):
         self.encoding = kwargs.get("encoding")
         self.write_through = False
         self._file_queue = _file_queue
+        print(self._file)
         with _lock:
             if not Path(self._file).exists() or override:
                 self._file_queue.put((self._url, str(Path(self._file).parent)))
@@ -136,7 +140,9 @@ class SLKFile(io.IOBase):
         for inp_file, out_dir in retrieve_files:
             retrieval_requests[Path(out_dir)].append(inp_file)
         for output_dir, inp_files in retrieval_requests.items():
-            output_dir.mkdir(parents=True, exist_ok=True, mode=self.file_permissions)
+            output_dir.mkdir(
+                parents=True, exist_ok=True, mode=self.file_permissions
+            )
             logger.critical("Creating slk query for %i files", len(inp_files))
             search_str = pyslk.slk_search(pyslk.slk_gen_file_query(inp_files))
             search_id_re = re.search("Search ID: [0-9]*", search_str)
@@ -269,16 +275,16 @@ class SLKFileSystem(AbstractFileSystem):
         )
         slk_cache = slk_cache or os.environ.get("SLK_CACHE")
         if not slk_cache:
-            local_cache = f"/scratch/{getuser()[0]}/{getuser()}"
+            slk_cache = f"/scratch/{getuser()[0]}/{getuser()}"
             warnings.warn(
                 "The slk_cache variable nor the SLK_CACHE environment"
                 "variable wasn't set. Falling back to default "
-                f"{local_cache}",
+                f"{slk_cache}",
                 UserWarning,
                 stacklevel=2,
             )
         self.touch = touch
-        self.slk_cache = Path(local_cache)
+        self.slk_cache = Path(slk_cache)
         self.override = override
         self.file_permissions = file_permissions
 

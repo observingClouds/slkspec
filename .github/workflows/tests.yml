@@ -1,0 +1,45 @@
+name: Tests
+run-name: ${{ github.actor }} is testing the code
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  tests:
+
+    runs-on: ubuntu-latest
+    strategy:
+        max-parallel: 5
+        matrix:
+          python-version: [3.7, 3.8, 3.9, "3.10", "3.11"]
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version:  ${{ matrix.python-version }}
+
+    - name: Add conda to system path
+      run: |
+        # $CONDA is an environment variable pointing to the root of the miniconda directory
+        echo $CONDA/bin >> $GITHUB_PATH
+
+    - name: Creating conda environment for ${{ matrix.python-version }}
+      run: |
+        conda create -n test -y python=${{matrix.python-version}} pip make
+
+    - name: Install dependencies
+      run: |
+        conda run -n test python3 -m pip install -e .[tests]
+
+    - name: Test with pytest
+      run: |
+        conda run -n test make test_coverage
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v1

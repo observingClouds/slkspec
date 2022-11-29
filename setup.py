@@ -30,6 +30,15 @@ setuptools.setup(
         "tests": [
             "mypy",
             "black",
+            "flake8",
+            "mock",
+            "pandas",
+            "pytest",
+            "pytest-env",
+            "pytest-cov",
+            "testpath",
+            "flake8",
+            "xarray",
         ],
         "preffs": [
             "preffs @ git+https://github.com/observingClouds/preffs.git@slkspec_patch",
