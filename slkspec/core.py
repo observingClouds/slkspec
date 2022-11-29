@@ -134,22 +134,22 @@ class SLKFile(io.IOBase):
         """Get items from the tape archive."""
 
         retrieval_requests: Dict[Path, List[str]] = defaultdict(list)
-        logger.critical("Retrieving %i items from tape", len(retrieve_files))
+        logger.debug("Retrieving %i items from tape", len(retrieve_files))
         for inp_file, out_dir in retrieve_files:
             retrieval_requests[Path(out_dir)].append(inp_file)
         for output_dir, inp_files in retrieval_requests.items():
             output_dir.mkdir(parents=True, exist_ok=True, mode=self.file_permissions)
-            logger.critical("Creating slk query for %i files", len(inp_files))
+            logger.debug("Creating slk query for %i files", len(inp_files))
             search_str = pyslk.slk_search(pyslk.slk_gen_file_query(inp_files))
             search_id_re = re.search("Search ID: [0-9]*", search_str)
             if search_id_re is None:
                 raise ValueError("No files found in archive.")
             search_id = int(search_id_re.group(0)[11:])
-            logger.critical("Retrieving files for search id: %i", search_id)
+            logger.debug("Retrieving files for search id: %i", search_id)
             pyslk.slk_retrieve(search_id, str(output_dir))
-            logger.critical("Adjusting file permissions")
+            logger.debug("Adjusting file permissions")
             for out_file in map(Path, inp_files):
-                out_file.chmod(self.file_permissions)
+                (output_dir / out_file.name).chmod(self.file_permissions)
 
     def _cache_files(self) -> None:
         with self._lock:
