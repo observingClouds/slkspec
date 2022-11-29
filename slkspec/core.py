@@ -184,7 +184,7 @@ class SLKFile(io.IOBase):
 
     @staticmethod
     def readable() -> Literal[True]:
-        """Comptibility method."""
+        """Compatibility method."""
         return True
 
     @staticmethod
