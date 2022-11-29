@@ -33,9 +33,7 @@ logger.setLevel(logging.INFO)
 
 MAX_RETRIES = 2
 FileQueue: Queue[Tuple[str, str]] = Queue(maxsize=-1)
-FileInfo = TypedDict(
-    "FileInfo", {"name": str, "size": Literal[None], "type": str}
-)
+FileInfo = TypedDict("FileInfo", {"name": str, "size": Literal[None], "type": str})
 _retrieval_lock = threading.Lock()
 
 
@@ -140,9 +138,7 @@ class SLKFile(io.IOBase):
         for inp_file, out_dir in retrieve_files:
             retrieval_requests[Path(out_dir)].append(inp_file)
         for output_dir, inp_files in retrieval_requests.items():
-            output_dir.mkdir(
-                parents=True, exist_ok=True, mode=self.file_permissions
-            )
+            output_dir.mkdir(parents=True, exist_ok=True, mode=self.file_permissions)
             logger.critical("Creating slk query for %i files", len(inp_files))
             search_str = pyslk.slk_search(pyslk.slk_gen_file_query(inp_files))
             search_id_re = re.search("Search ID: [0-9]*", search_str)
