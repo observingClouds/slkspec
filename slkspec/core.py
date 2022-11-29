@@ -213,7 +213,7 @@ class SLKFile(io.IOBase):
         return None
 
     def writelines(self, *arg: Any) -> None:
-        """Comptibility method."""
+        """Compatibility method."""
         raise NotImplementedError(self.write_msg)
 
     def write(self, *arg: Any) -> None:
