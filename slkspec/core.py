@@ -1,31 +1,31 @@
 from __future__ import annotations
-from collections import defaultdict
-from getpass import getuser
-import logging
+
 import io
+import logging
 import os
-from pathlib import Path
-from queue import Queue
 import re
 import threading
+import warnings
+from collections import defaultdict
+from getpass import getuser
+from pathlib import Path
+from queue import Queue
 from typing import (
-    AnyStr,
-    Any,
-    Dict,
     IO,
-    Literal,
+    Any,
+    AnyStr,
+    Dict,
     List,
+    Literal,
     Optional,
-    overload,
     Tuple,
     TypedDict,
     Union,
+    overload,
 )
-import warnings
 
 from fsspec.spec import AbstractFileSystem
 from pyslk import pyslk
-
 
 logger = logging.getLogger("slkspec")
 logger.setLevel(logging.INFO)
@@ -178,7 +178,7 @@ class SLKFile(io.IOBase):
 
     def seek(self, target: int) -> int:  # type: ignore
         if self._file_obj is None:
-             self._cache_files()
+            self._cache_files()
         return self._file_obj.seek(target)  # type: ignore
 
     @staticmethod

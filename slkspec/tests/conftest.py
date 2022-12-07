@@ -1,15 +1,16 @@
 """pytest definitions to run the unittests."""
 from __future__ import annotations
+
+import shutil
 from pathlib import Path
-from subprocess import run, PIPE
+from subprocess import PIPE, run
 from tempfile import TemporaryDirectory
 from typing import Generator
-import shutil
 
-import pytest
 import mock
 import numpy as np
 import pandas as pd
+import pytest
 import xarray as xr
 
 
