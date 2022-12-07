@@ -30,14 +30,15 @@ setuptools.setup(
         "tests": [
             "mypy",
             "black",
+            "dask",
             "flake8",
             "mock",
+            "netCDF4",
             "pandas",
             "pytest",
             "pytest-env",
             "pytest-cov",
             "testpath",
-            "netCDF4",
             "xarray",
         ],
         "preffs": [
