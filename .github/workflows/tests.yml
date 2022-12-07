@@ -32,7 +32,7 @@ jobs:
 
     - name: Creating conda environment for ${{ matrix.python-version }}
       run: |
-        conda create -n test -y python=${{matrix.python-version}} pip make
+        conda create -n test -c conda-forge -y python=${{matrix.python-version}} pip make
 
     - name: Install dependencies
       run: |
