@@ -1,0 +1,7 @@
+[run]
+omit = */tests/*, slkspec/_version.py
+concurrency = multiprocessing
+
+[report]
+exclude_lines =
+    pragma: no cover
