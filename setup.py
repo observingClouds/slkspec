@@ -37,7 +37,7 @@ setuptools.setup(
             "pytest-env",
             "pytest-cov",
             "testpath",
-            "flake8",
+            "netCDF4",
             "xarray",
         ],
         "preffs": [
