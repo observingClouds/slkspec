@@ -272,8 +272,8 @@ class SLKFileSystem(AbstractFileSystem):
         if not slk_cache:
             slk_cache = f"/scratch/{getuser()[0]}/{getuser()}"
             warnings.warn(
-                "The slk_cache variable nor the SLK_CACHE environment"
-                "variable wasn't set. Falling back to default "
+                "Neither the slk_cache argument nor the SLK_CACHE environment "
+                "variable is set. Falling back to default "
                 f"{slk_cache}",
                 UserWarning,
                 stacklevel=2,
