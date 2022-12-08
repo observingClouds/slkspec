@@ -42,7 +42,7 @@ setuptools.setup(
             "xarray",
         ],
         "preffs": [
-            "preffs @ git+https://github.com/observingClouds/preffs.git@slkspec_patch",
+            "preffs @ git+https://github.com/d70-t/preffs.git@main",
             "aiohttp",
         ],
     },
