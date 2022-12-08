@@ -1,3 +1,6 @@
+[![CI](https://github.com/observingClouds/slkspec/workflows/Tests/badge.svg?branch=main)](https://github.com/observingClouds/slkspec/actions?query=workflow%3ATests)
+[![Linter](https://github.com/observingClouds/slkspec/workflows/Linter/badge.svg?branch=main)](https://github.com/observingClouds/slkspec/actions?query=workflow%3ALinter)
+
 # slkspec
 
 This is work in progress! This repository showcases how the tape archive can be integrated into the scientific workflow.
