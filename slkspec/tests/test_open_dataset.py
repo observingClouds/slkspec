@@ -6,6 +6,8 @@ from tempfile import TemporaryDirectory
 import pytest
 import xarray as xr
 
+import slkspec
+
 
 def test_reading_dataset(patch_dir: Path, netcdf_files: Path) -> None:
     """Test reading datafiles with slkspec."""
@@ -26,6 +28,8 @@ def test_warnings(patch_dir: Path) -> None:
 
     with pytest.warns(UserWarning):
         fsspec.open("slk:///foo/bar.txt", mode="rt").open()
+
+    slkspec.core.FileQueue.queue.clear()  # TODO: empty queue automatically
 
 
 def test_reading_nonexisting_dataset(patch_dir: Path, netcdf_files: Path) -> None:
