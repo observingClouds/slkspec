@@ -27,6 +27,7 @@ def test_warnings(patch_dir: Path) -> None:
     with pytest.warns(UserWarning):
         fsspec.open("slk:///foo/bar.txt", mode="rt").open()
 
+
 def test_reading_nonexisting_dataset(patch_dir: Path, netcdf_files: Path) -> None:
     """Test read-failure on non-existing files."""
     import fsspec
