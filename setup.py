@@ -42,6 +42,7 @@ setuptools.setup(
             "xarray",
         ],
         "preffs": [
+            "fastparquet",
             "preffs @ git+https://github.com/d70-t/preffs.git@main",
             "aiohttp",
         ],
