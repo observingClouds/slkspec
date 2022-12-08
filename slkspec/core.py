@@ -171,9 +171,8 @@ class SLKFile(io.IOBase):
         return self.name
 
     def tell(self) -> int:
-        if self._file_obj is not None:
-            return self._file_obj.tell()
-        self._cache_files()
+        if self._file_obj is None:
+            self._cache_files()
         return self._file_obj.tell()  # type: ignore
 
     def seek(self, target: int) -> int:  # type: ignore
