@@ -143,7 +143,7 @@ class SLKFile(io.IOBase):
             search_str = pyslk.slk_search(pyslk.slk_gen_file_query(inp_files))
             search_id_re = re.search("Search ID: [0-9]*", search_str)
             if search_id_re is None:
-                raise ValueError("No files found in archive.")
+                raise FileNotFoundError("No files found in archive.")
             search_id = int(search_id_re.group(0)[11:])
             logger.debug("Retrieving files for search id: %i", search_id)
             pyslk.slk_retrieve(search_id, str(output_dir))
@@ -159,8 +159,13 @@ class SLKFile(io.IOBase):
                 for _ in range(self._file_queue.qsize() - 1):
                     items.append(self._file_queue.get())
                     self._file_queue.task_done()
-                self._retrieve_items(items)
-                _ = self._file_queue.get()
+                try:
+                    self._retrieve_items(items)
+                except FileNotFoundError as e:
+                    self._file_queue.get()
+                    self._file_queue.task_done()
+                    raise FileNotFoundError(e)
+                self._file_queue.get()
                 self._file_queue.task_done()
         self._file_queue.join()
         self._file_obj = open(self._file, self.mode, **self.kwargs)

@@ -6,6 +6,8 @@ from tempfile import TemporaryDirectory
 import pytest
 import xarray as xr
 
+import slkspec
+
 
 def test_reading_dataset(patch_dir: Path, netcdf_files: Path) -> None:
     """Test reading datafiles with slkspec."""
@@ -19,14 +21,6 @@ def test_reading_dataset(patch_dir: Path, netcdf_files: Path) -> None:
     dataset2 = xr.open_mfdataset(urls, combine="by_coords")
     assert dataset1 == dataset2
 
-    non_existing_urls = fsspec.open(
-        "slk:///foo/bar.nc",
-        slk_cache=patch_dir,
-        mode="rt",
-    ).open()
-    with pytest.raises(ValueError):
-        non_existing_urls.read()
-
 
 def test_warnings(patch_dir: Path) -> None:
     """Check if slk specs warns the users if the cache wasn't set."""
@@ -34,6 +28,21 @@ def test_warnings(patch_dir: Path) -> None:
 
     with pytest.warns(UserWarning):
         fsspec.open("slk:///foo/bar.txt", mode="rt").open()
+
+    slkspec.core.FileQueue.queue.clear()  # TODO: empty queue automatically
+
+
+def test_reading_nonexisting_dataset(patch_dir: Path, netcdf_files: Path) -> None:
+    """Test read-failure on non-existing files."""
+    import fsspec
+
+    non_existing_urls = fsspec.open(
+        "slk:///foo/bar.nc",
+        slk_cache=patch_dir,
+        mode="rt",
+    ).open()
+    with pytest.raises(FileNotFoundError):
+        non_existing_urls.read()
 
 
 def test_text_mode(patch_dir: Path) -> None:

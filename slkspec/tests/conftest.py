@@ -89,7 +89,7 @@ def patch_dir() -> Generator[Path, None, None]:
 
 @pytest.fixture(scope="session")
 def save_dir() -> Generator[Path, None, None]:
-    """Crate a temporary directory."""
+    """Create a temporary directory."""
     with TemporaryDirectory() as td:
         yield Path(td)
 
