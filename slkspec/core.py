@@ -93,7 +93,7 @@ class SLKFile(io.IOBase):
         mode: str = "rb",
         touch: bool = True,
         file_permissions: int = 0o3777,
-        sleep: int = 2,
+        delay: int = 2,
         _lock: threading.Lock = _retrieval_lock,
         _file_queue: Queue[Tuple[str, str]] = FileQueue,
         **kwargs: Any,
@@ -115,7 +115,7 @@ class SLKFile(io.IOBase):
         self.error = "strict"
         self.encoding = kwargs.get("encoding")
         self.write_through = False
-        self.sleep = sleep
+        self.delay = delay
         self._file_queue = _file_queue
         print(self._file)
         with _lock:
@@ -155,7 +155,7 @@ class SLKFile(io.IOBase):
                 (output_dir / out_file.name).chmod(self.file_permissions)
 
     def _cache_files(self) -> None:
-        time.sleep(self.sleep)
+        time.sleep(self.delay)
         with self._lock:
             items = []
             if self._file_queue.qsize() > 0:
