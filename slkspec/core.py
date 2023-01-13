@@ -165,11 +165,13 @@ class SLKFile(io.IOBase):
                     self._file_queue.task_done()
                 try:
                     self._retrieve_items(items)
-                except FileNotFoundError as e:
-                    self._file_queue.get()
+                except Exception as error:
+                    _ = [
+                        self._file_queue.get() for _ in range(self._file_queue.qsize())
+                    ]
                     self._file_queue.task_done()
-                    raise FileNotFoundError(e)
-                self._file_queue.get()
+                    raise error
+                _ = self._file_queue.get()
                 self._file_queue.task_done()
         self._file_queue.join()
         self._file_obj = open(self._file, self.mode, **self.kwargs)
