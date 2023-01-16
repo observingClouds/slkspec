@@ -4,15 +4,19 @@ import dask
 import xarray as xr
 
 
+@xr.register_dataarray_accessor("stage")
 @xr.register_dataset_accessor("stage")
 class stage:
     def __init__(self, xarray_obj):
 
         self._obj = xarray_obj
 
-    def __call__(self, keep_in_memory=False):
+    def __call__(self):
 
-        return self.get_dataset(keep_in_memory)
+        if isinstance(self._obj, xr.Dataset):
+            return self.get_dataset()
+        elif isinstance(self._obj, xr.DataArray):
+            return self.get_dataarray()
 
     def check_layer(self, graph, layer_identifier="open_dataset"):
         return bool(graph.startswith(layer_identifier))
@@ -34,32 +38,32 @@ class stage:
         input_graph = graph.cull(keys=output_keys)
         return input_graph
 
-    def get_dataset(self, keep_in_memory=False):
+    def get_data(self, data):
         def do_nothing(x):
             return
 
-        das = {}
-        for var in self._obj.data_vars:
-            dask_keys = self._obj[var].data.__dask_keys__()
-            graph = self._obj[var].data.dask.cull(keys=dask_keys)
+        dask_keys = data.__dask_keys__()
+        graph = data.dask.cull(keys=dask_keys)
 
-            output_keys = self.get_output_keys(graph)
-            input_graph = self.get_input_graph(graph, output_keys)
-            input_graph = input_graph.to_dict()
-            for k, key in enumerate(output_keys):
-                input_graph[f"do_nothing_w_dataset-{k}"] = (do_nothing, key)
-            input_graph["do_nothing_at_all"] = (
-                do_nothing,
-                [f"do_nothing_w_dataset-{t}" for t in range(k)],
-            )
-            scheduler = (
-                dask.base.get_scheduler()
-            )  # determine whether LocalCluster/SLUMCluster etc. exist
-            if keep_in_memory:
-                das[var] = scheduler(input_graph, list(output_keys))
-            else:
-                _ = scheduler(input_graph, "do_nothing_at_all")
-        if keep_in_memory:
-            return das
-        else:
-            return
+        output_keys = self.get_output_keys(graph)
+        input_graph = self.get_input_graph(graph, output_keys)
+        input_graph = input_graph.to_dict()
+        for k, key in enumerate(output_keys):
+            input_graph[f"do_nothing_w_dataset-{k}"] = (do_nothing, key)
+        input_graph["do_nothing_at_all"] = (
+            do_nothing,
+            [f"do_nothing_w_dataset-{t}" for t in range(k)],
+        )
+        scheduler = (
+            dask.base.get_scheduler()
+        )  # determine whether LocalCluster/SLUMCluster etc. exist
+        _ = scheduler(input_graph, "do_nothing_at_all")
+        return
+
+    def get_dataarray(self):
+        return self.get_data(self._obj.data)
+
+    def get_dataset(self):
+        for var in self._obj.data_vars:
+            _ = self.get_data(self._obj[var].data)
+        return
