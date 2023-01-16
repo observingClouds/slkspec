@@ -52,10 +52,13 @@ class stage:
                 do_nothing,
                 [f"do_nothing-{t}" for t in range(k)],
             )
+            scheduler = (
+                dask.base.get_scheduler()
+            )  # determine whether LocalCluster/SLUMCluster etc. exist
             if keep_in_memory:
-                das[var] = dask.threaded.get(input_graph, list(output_keys))
+                das[var] = scheduler(input_graph, list(output_keys))
             else:
-                _ = dask.threaded.get(input_graph, "do_nothing_at_all")
+                _ = scheduler(input_graph, "do_nothing_at_all")
         if keep_in_memory:
             return das
         else:
