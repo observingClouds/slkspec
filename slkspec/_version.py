@@ -109,9 +109,10 @@ def run_command(commands, args, cwd=None, verbose=False, hide_stderr=False, env=
 def versions_from_parentdir(parentdir_prefix, root, verbose):
     """Try to determine the version from the parent directory name.
 
-    Source tarballs conventionally unpack into a directory that includes both
-    the project name and a version string. We will also support searching up
-    two directory levels for an appropriately named parent directory
+    Source tarballs conventionally unpack into a directory that includes
+    both the project name and a version string. We will also support
+    searching up two directory levels for an appropriately named parent
+    directory
     """
     rootdirs = []
 
@@ -434,8 +435,9 @@ def render_pep440_branch(pieces):
 def pep440_split_post(ver):
     """Split pep440 version string at the post-release segment.
 
-    Returns the release segments before the post-release and the
-    post-release version number (or -1 if no post-release segment is present).
+    Returns the release segments before the post-release and the post-
+    release version number (or -1 if no post-release segment is
+    present).
     """
     vc = str.split(ver, ".post")
     return vc[0], int(vc[1] or 0) if len(vc) == 2 else None
