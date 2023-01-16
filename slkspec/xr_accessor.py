@@ -47,10 +47,10 @@ class stage:
             input_graph = self.get_input_graph(graph, output_keys)
             input_graph = input_graph.to_dict()
             for k, key in enumerate(output_keys):
-                input_graph[f"do_nothing-{k}"] = (do_nothing, key)
+                input_graph[f"do_nothing_w_dataset-{k}"] = (do_nothing, key)
             input_graph["do_nothing_at_all"] = (
                 do_nothing,
-                [f"do_nothing-{t}" for t in range(k)],
+                [f"do_nothing_w_dataset-{t}" for t in range(k)],
             )
             scheduler = (
                 dask.base.get_scheduler()
