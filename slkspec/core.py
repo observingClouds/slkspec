@@ -76,7 +76,6 @@ class SLKFile(io.IOBase):
         url = fsspec.open("slk:////arch/bb1203/data.nc",
                           slk_cache="/scratch/b/b12346").open()
         dset = xr.open_dataset(url)
-
     """
 
     write_msg: str = "Write mode is not suppored"
