@@ -35,6 +35,9 @@ class stage:
         return input_graph
 
     def get_dataset(self, keep_in_memory=False):
+        def do_nothing(x):
+            return
+
         das = {}
         for var in self._obj.data_vars:
             dask_keys = self._obj[var].data.__dask_keys__()
@@ -42,10 +45,17 @@ class stage:
 
             output_keys = self.get_output_keys(graph)
             input_graph = self.get_input_graph(graph, output_keys)
+            input_graph = input_graph.to_dict()
+            for k, key in enumerate(output_keys):
+                input_graph[f"do_nothing-{k}"] = (do_nothing, key)
+            input_graph["do_nothing_at_all"] = (
+                do_nothing,
+                [f"do_nothing-{t}" for t in range(k)],
+            )
             if keep_in_memory:
                 das[var] = dask.threaded.get(input_graph, list(output_keys))
             else:
-                _ = dask.threaded.get(input_graph, list(output_keys))
+                _ = dask.threaded.get(input_graph, "do_nothing_at_all")
         if keep_in_memory:
             return das
         else:
