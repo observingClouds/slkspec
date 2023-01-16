@@ -10,9 +10,9 @@ class stage:
 
         self._obj = xarray_obj
 
-    def __call__(self):
+    def __call__(self, keep_in_memory=False):
 
-        return self.get_dataset()
+        return self.get_dataset(keep_in_memory)
 
     def check_layer(self, graph, layer_identifier="open_dataset"):
         return bool(graph.startswith(layer_identifier))
