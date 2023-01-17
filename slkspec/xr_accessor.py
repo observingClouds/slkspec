@@ -117,7 +117,10 @@ class stage:
         scheduler = (
             dask.base.get_scheduler()
         )  # determine whether LocalCluster/SLUMCluster etc. exist
-        _ = scheduler(input_graph, "do_nothing_at_all")
+        if scheduler is None:
+            _ = dask.threaded.get(input_graph, "do_nothing_at_all")
+        else:
+            _ = scheduler(input_graph, "do_nothing_at_all")
         return
 
     def get_dataarray(self):

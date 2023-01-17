@@ -32,8 +32,20 @@ logger = logging.getLogger("slkspec")
 logger.setLevel(logging.INFO)
 
 
+class SetQueue(Queue):
+    def _init(self, maxsize):
+        Queue._init(self, maxsize)
+        self.all_items = set()
+        print("all_items", self.all_items)
+
+    def _put(self, item):
+        if item not in self.all_items:
+            Queue._put(self, item)
+            self.all_items.add(item)
+
+
 MAX_RETRIES = 2
-FileQueue: Queue[Tuple[str, str]] = Queue(maxsize=-1)
+FileQueue: Queue[Tuple[str, str]] = SetQueue(maxsize=-1)
 FileInfo = TypedDict("FileInfo", {"name": str, "size": Literal[None], "type": str})
 _retrieval_lock = threading.Lock()
 
