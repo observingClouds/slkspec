@@ -138,7 +138,7 @@ class SLKFile(io.IOBase):
         for inp_file, out_dir in retrieve_files:
             retrieval_requests[Path(out_dir)].append(inp_file)
         for output_dir, inp_files in retrieval_requests.items():
-            output_dir.mkdir(parents=True, exist_ok=True, mode=self.file_permissions)
+            self.mkdirs(output_dir)
             logger.debug("Creating slk query for %i files", len(inp_files))
             search_str = pyslk.slk_search(pyslk.slk_gen_file_query(inp_files))
             search_id_re = re.search("Search ID: [0-9]*", search_str)
@@ -150,6 +150,18 @@ class SLKFile(io.IOBase):
             logger.debug("Adjusting file permissions")
             for out_file in map(Path, inp_files):
                 (output_dir / out_file.name).chmod(self.file_permissions)
+
+    def mkdirs(self, path):
+        rp = os.path.realpath(path)
+        if os.access(rp, os.F_OK):
+            return
+        components = Path(rp).parts[1:]
+        for i in range (len(components)):
+            subpath = Path(*components[:i+1])
+            if not os.access(subpath, os.F_OK):
+                os.mkdir(subpath)
+                os.chmod(subpath, self.file_permissions)
+
 
     def _cache_files(self) -> None:
         with self._lock:
