@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import shutil
+import time
 from pathlib import Path
 from subprocess import PIPE, run
 from tempfile import TemporaryDirectory
@@ -41,9 +42,10 @@ class SLKMock:
         """Mock slk_gen_file_qeury."""
         return [f for f in inp_files if Path(f).exists()]
 
-    def slk_retrieve(self, search_id: int, out_dir: str) -> None:
+    def slk_retrieve(self, search_id: int, out_dir: str, delay: int = 4) -> None:
         """Mock slk_retrieve."""
         for inp_file in map(Path, self._cache[search_id]):
+            time.sleep(delay)
             shutil.copy(inp_file, Path(out_dir) / inp_file.name)
 
 
@@ -65,8 +67,8 @@ def create_data(variable_name: str, size: int) -> xr.Dataset:
     )
     dims = (4, size, size)
     data_array = np.empty(dims)
-    for time in range(dims[0]):
-        data_array[time] = np.zeros((size, size))
+    for t in range(dims[0]):
+        data_array[t] = np.zeros((size, size))
     dset = xr.DataArray(
         data_array,
         dims=("time", "y", "x"),
@@ -107,9 +109,9 @@ def netcdf_files(
     """Save data with a blob to file."""
 
     with TemporaryDirectory() as td:
-        for time in (data.time[:2], data.time[2:]):
-            time1 = pd.Timestamp(time.values[0]).strftime("%Y%m%d%H%M")
-            time2 = pd.Timestamp(time.values[1]).strftime("%Y%m%d%H%M")
+        for times in (data.time[:2], data.time[2:]):
+            time1 = pd.Timestamp(times.values[0]).strftime("%Y%m%d%H%M")
+            time2 = pd.Timestamp(times.values[1]).strftime("%Y%m%d%H%M")
             out_file = (
                 Path(td)
                 / "the_project"
@@ -118,5 +120,5 @@ def netcdf_files(
                 / f"precip_{time1}-{time2}.nc"
             )
             out_file.parent.mkdir(exist_ok=True, parents=True)
-            data.sel(time=time).to_netcdf(out_file)
+            data.sel(time=times).to_netcdf(out_file)
         yield Path(td)
