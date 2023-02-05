@@ -278,7 +278,12 @@ class SLKFileSystem(AbstractFileSystem):
             loop=None,
             **storage_options,
         )
-        slk_cache = slk_cache or os.environ.get("SLK_CACHE")
+        slk_options = storage_options.get("slk", {})
+        slk_cache = (
+            slk_options.get("slk_cache", None)
+            or slk_cache
+            or os.environ.get("SLK_CACHE")
+        )
         if not slk_cache:
             slk_cache = f"/scratch/{getuser()[0]}/{getuser()}"
             warnings.warn(
