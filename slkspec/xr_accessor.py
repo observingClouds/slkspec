@@ -4,8 +4,8 @@ import dask
 import xarray as xr
 
 
-@xr.register_dataarray_accessor("stage")
-@xr.register_dataset_accessor("stage")
+@xr.register_dataarray_accessor("slk")
+@xr.register_dataset_accessor("slk")
 class stage:
     """Request files without keeping them in memory.
 
