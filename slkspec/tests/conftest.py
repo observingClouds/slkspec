@@ -120,3 +120,16 @@ def netcdf_files(
             out_file.parent.mkdir(exist_ok=True, parents=True)
             data.sel(time=time).to_netcdf(out_file)
         yield Path(td)
+
+
+@pytest.fixture(scope="session")
+def zarr_file(
+    data: xr.Dataset,
+) -> Generator[Path, None, None]:
+    """Save data with a blob to file."""
+
+    with TemporaryDirectory() as td:
+        out_file = Path(td) / "the_project" / "test1" / "precip" / "precip.zarr"
+        out_file.parent.mkdir(exist_ok=True, parents=True)
+        data.to_zarr(out_file)
+        yield Path(td)
