@@ -6,7 +6,7 @@ import xarray as xr
 
 @xr.register_dataarray_accessor("slk")
 @xr.register_dataset_accessor("slk")
-class stage:
+class slk:
     """Request files without keeping them in memory.
 
     This accessor is similar to :py:func:`xarray.Dataset.load`,
@@ -21,13 +21,13 @@ class stage:
     def __init__(self, xarray_obj):
         self._obj = xarray_obj
 
-    def __call__(self):
+    def stage(self):
         if isinstance(self._obj, xr.Dataset):
-            return self.get_dataset()
+            return self._get_dataset()
         elif isinstance(self._obj, xr.DataArray):
-            return self.get_dataarray()
+            return self._get_dataarray()
 
-    def check_layer(self, key, layer="open_dataset"):
+    def _check_layer(self, key, layer="open_dataset"):
         """Check if dask graph key is part of `layer`
 
         Inputs
@@ -44,7 +44,7 @@ class stage:
         """
         return bool(key.startswith(layer))
 
-    def get_output_tasks(self, highLevelGraph):
+    def _get_output_tasks(self, highLevelGraph):
         """Get all tasks that are responsible for loading chunks, i.e. those in
         the `open_dataset` layers in the dask `highLevelGraph`.
 
@@ -63,19 +63,19 @@ class stage:
 
         return list(compress(k, layer_mask))
 
-    def get_output_keys(self, graph):
-        layer_keys = self.get_output_tasks(graph.layers)
+    def _get_output_keys(self, graph):
+        layer_keys = self._get_output_tasks(graph.layers)
         layers = [graph.layers[k] for k in layer_keys]
-        output_keys = [lay.get_output_keys() for lay in layers]
+        output_keys = [lay._get_output_keys() for lay in layers]
 
         return set().union(*output_keys)
 
-    def get_input_graph(self, graph, output_keys):
+    def _get_input_graph(self, graph, output_keys):
         """Simplify dask graph based on `output_keys`"""
         input_graph = graph.cull(keys=output_keys)
         return input_graph
 
-    def connect_tasks(self, graph, tasks_to_connect):
+    def _connect_tasks(self, graph, tasks_to_connect):
         """Connect tasks with pseudo gathering the results of sub-tasks.
 
         Inputs
@@ -105,7 +105,7 @@ class stage:
         )
         return graph
 
-    def get_data(self, data):
+    def _get_data(self, data):
         """Main function."""
         dask_keys = data.__dask_keys__()
         graph = data.dask.cull(keys=dask_keys)
@@ -123,12 +123,12 @@ class stage:
             _ = scheduler(input_graph, "do_nothing_at_all")
         return
 
-    def get_dataarray(self):
+    def _get_dataarray(self):
         """Get_data wrapper for xr.DataArray."""
-        return self.get_data(self._obj.data)
+        return self._get_data(self._obj.data)
 
-    def get_dataset(self):
+    def _get_dataset(self):
         """Get_data wrapper for xr.Dataset."""
         for var in self._obj.data_vars:
-            _ = self.get_data(self._obj[var].data)
+            _ = self._get_data(self._obj[var].data)
         return
