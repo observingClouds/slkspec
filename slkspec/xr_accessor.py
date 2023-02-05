@@ -117,10 +117,7 @@ class slk:
         scheduler = (
             dask.base.get_scheduler()
         )  # determine whether LocalCluster/SLUMCluster etc. exist
-        if scheduler is None:
-            _ = dask.threaded.get(input_graph, "do_nothing_at_all")
-        else:
-            _ = scheduler(input_graph, "do_nothing_at_all")
+        _ = scheduler(input_graph, "do_nothing_at_all")
         return
 
     def _get_dataarray(self):
