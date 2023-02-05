@@ -18,7 +18,6 @@ class SLKMock:
     """A mock that emulates what pyslk is doing."""
 
     def __init__(self, _cache: dict[int, list[str]] = {}) -> None:
-
         self._cache = _cache
 
     def slk_list(self, inp_path: str) -> str:
