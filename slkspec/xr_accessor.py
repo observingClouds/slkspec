@@ -70,7 +70,7 @@ class slk:
     def _get_output_keys(self, graph: dask.highlevelgraph.HighLevelGraph) -> set:
         layer_keys = self._get_output_tasks(graph.layers)
         layers = [graph.layers[k] for k in layer_keys]
-        output_keys = [lay._get_output_keys() for lay in layers]
+        output_keys = [lay.get_output_keys() for lay in layers]
 
         return set().union(*output_keys)
 
