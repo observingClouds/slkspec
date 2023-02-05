@@ -1,4 +1,5 @@
 from itertools import compress
+from typing import Any, Union
 
 import dask
 import xarray as xr
@@ -18,16 +19,17 @@ class slk:
     when using e.g.`simplecache` or `slkspec` with SLK_CACHE.
     """
 
-    def __init__(self, xarray_obj):
+    def __init__(self, xarray_obj: Union[xr.Dataset, xr.DataArray]) -> None:
         self._obj = xarray_obj
 
-    def stage(self):
+    def stage(self) -> None:
         if isinstance(self._obj, xr.Dataset):
-            return self._get_dataset()
+            self._get_dataset()
         elif isinstance(self._obj, xr.DataArray):
-            return self._get_dataarray()
+            self._get_dataarray()
+        return
 
-    def _check_layer(self, key, layer="open_dataset"):
+    def _check_layer(self, key: str, layer: str = "open_dataset") -> bool:
         """Check if dask graph key is part of `layer`
 
         Inputs
@@ -44,7 +46,9 @@ class slk:
         """
         return bool(key.startswith(layer))
 
-    def _get_output_tasks(self, highLevelGraph):
+    def _get_output_tasks(
+        self, highLevelGraph: dask.highlevelgraph.HighLevelGraph
+    ) -> list:
         """Get all tasks that are responsible for loading chunks, i.e. those in
         the `open_dataset` layers in the dask `highLevelGraph`.
 
@@ -63,26 +67,28 @@ class slk:
 
         return list(compress(k, layer_mask))
 
-    def _get_output_keys(self, graph):
+    def _get_output_keys(self, graph: dask.highlevelgraph.HighLevelGraph) -> set:
         layer_keys = self._get_output_tasks(graph.layers)
         layers = [graph.layers[k] for k in layer_keys]
         output_keys = [lay._get_output_keys() for lay in layers]
 
         return set().union(*output_keys)
 
-    def _get_input_graph(self, graph, output_keys):
+    def _get_input_graph(
+        self, graph: dask.highlevelgraph.HighLevelGraph, output_keys: set
+    ) -> dask.highlevelgraph.HighLevelGraph:
         """Simplify dask graph based on `output_keys`"""
         input_graph = graph.cull(keys=output_keys)
         return input_graph
 
-    def _connect_tasks(self, graph, tasks_to_connect):
+    def _connect_tasks(self, graph: dict, tasks_to_connect: set) -> dict:
         """Connect tasks with pseudo gathering the results of sub-tasks.
 
         Inputs
         ------
         graph : dict
             Dictionary representation of dask task graph
-        tasks_to_connect : list
+        tasks_to_connect : set
             List of tasks that should be connected embarrassingly parallel.
 
         Returns
@@ -91,7 +97,7 @@ class slk:
             Dask task graph with additional connections
         """
 
-        def do_nothing(x):
+        def do_nothing(x: Any) -> None:
             return
 
         # Adding embarrassingly parallel layer to each task to immediatly
@@ -99,13 +105,14 @@ class slk:
         for k, key in enumerate(tasks_to_connect):
             graph[f"do_nothing_w_dataset-{k}"] = (do_nothing, key)
         # Gather tasks
+        k = len(tasks_to_connect)
         graph["do_nothing_at_all"] = (
             do_nothing,
             [f"do_nothing_w_dataset-{t}" for t in range(k)],
         )
         return graph
 
-    def _get_data(self, data):
+    def _get_data(self, data: dask.array.Array) -> None:
         """Main function."""
         dask_keys = data.__dask_keys__()
         graph = data.dask.cull(keys=dask_keys)
@@ -120,12 +127,13 @@ class slk:
         _ = scheduler(input_graph, "do_nothing_at_all")
         return
 
-    def _get_dataarray(self):
+    def _get_dataarray(self) -> None:
         """Get_data wrapper for xr.DataArray."""
-        return self._get_data(self._obj.data)
+        self._get_data(self._obj.data)
+        return
 
-    def _get_dataset(self):
+    def _get_dataset(self) -> None:
         """Get_data wrapper for xr.Dataset."""
         for var in self._obj.data_vars:
-            _ = self._get_data(self._obj[var].data)
+            self._get_data(self._obj[var].data)
         return
