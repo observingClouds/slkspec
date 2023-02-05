@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import threading
+import time
 import warnings
 from collections import defaultdict
 from getpass import getuser
@@ -91,6 +92,7 @@ class SLKFile(io.IOBase):
         mode: str = "rb",
         touch: bool = True,
         file_permissions: int = 0o3777,
+        delay: int = 2,
         _lock: threading.Lock = _retrieval_lock,
         _file_queue: Queue[Tuple[str, str]] = FileQueue,
         **kwargs: Any,
@@ -112,6 +114,7 @@ class SLKFile(io.IOBase):
         self.error = "strict"
         self.encoding = kwargs.get("encoding")
         self.write_through = False
+        self.delay = delay
         self._file_queue = _file_queue
         print(self._file)
         with _lock:
@@ -151,6 +154,7 @@ class SLKFile(io.IOBase):
                 (output_dir / out_file.name).chmod(self.file_permissions)
 
     def _cache_files(self) -> None:
+        time.sleep(self.delay)
         with self._lock:
             items = []
             if self._file_queue.qsize() > 0:
@@ -264,6 +268,7 @@ class SLKFileSystem(AbstractFileSystem):
         slk_cache: Optional[Union[str, Path]] = None,
         file_permissions: int = 0o3777,
         touch: bool = True,
+        delay: int = 2,
         override: bool = False,
         **storage_options: Any,
     ):
@@ -286,6 +291,7 @@ class SLKFileSystem(AbstractFileSystem):
         self.touch = touch
         self.slk_cache = Path(slk_cache)
         self.override = override
+        self.delay = delay
         self.file_permissions = file_permissions
 
     @overload
@@ -354,6 +360,7 @@ class SLKFileSystem(AbstractFileSystem):
             mode=mode,
             override=self.override,
             touch=self.touch,
+            delay=self.delay,
             encoding=kwargs.get("encoding"),
             file_permissions=self.file_permissions,
         )
