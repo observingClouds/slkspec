@@ -269,6 +269,7 @@ class SLKFileSystem(AbstractFileSystem):
         slk_cache: Optional[Union[str, Path]] = None,
         file_permissions: int = 0o3777,
         touch: bool = True,
+        delay: int = 2,
         override: bool = False,
         **storage_options: Any,
     ):
@@ -291,6 +292,7 @@ class SLKFileSystem(AbstractFileSystem):
         self.touch = touch
         self.slk_cache = Path(slk_cache)
         self.override = override
+        self.delay = delay
         self.file_permissions = file_permissions
 
     @overload
@@ -359,6 +361,7 @@ class SLKFileSystem(AbstractFileSystem):
             mode=mode,
             override=self.override,
             touch=self.touch,
+            delay=self.delay,
             encoding=kwargs.get("encoding"),
             file_permissions=self.file_permissions,
         )
