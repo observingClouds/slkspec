@@ -2,6 +2,7 @@ from itertools import compress
 from typing import Any, Union
 
 import dask
+import dask.array as da
 import xarray as xr
 
 
@@ -112,7 +113,7 @@ class slk:
         )
         return graph
 
-    def _get_data(self, data: dask.array.Array) -> None:
+    def _get_data(self, data: da.Array) -> None:
         """Main function."""
         dask_keys = data.__dask_keys__()
         graph = data.dask.cull(keys=dask_keys)
