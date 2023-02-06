@@ -260,6 +260,7 @@ class SLKFileSystem(AbstractFileSystem):
     """
 
     protocol = "slk"
+    local_file = True
     sep = "/"
 
     def __init__(
