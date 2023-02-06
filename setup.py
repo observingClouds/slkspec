@@ -28,6 +28,7 @@ setuptools.setup(
     ],
     extras_require={
         "tests": [
+            "zarr",
             "mypy",
             "black",
             "dask",

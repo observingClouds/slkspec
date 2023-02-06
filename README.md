@@ -45,7 +45,3 @@ dataset operation. In the beginning only the file containing the metadata
 (e.g. .zattrs, .zmetadata) and coordinates are requested (e.g. time). After the
 files have been retrieved once, they are saved at the path given in
 `SLK_CACHE` and accessed directly from there.
-
-
-## Current limitations (among others)
-- tape retrievals are done within the currently selected compute resources, which might not be needed for a simple tape retrieval
