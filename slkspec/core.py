@@ -157,7 +157,7 @@ class SLKFile(io.IOBase):
             return
         components = Path(rp).parts[1:]
         for i in range (len(components)):
-            subpath = Path(*components[:i+1])
+            subpath = Path("/", *components[:i+1])
             if not os.access(subpath, os.F_OK):
                 os.mkdir(subpath)
                 os.chmod(subpath, self.file_permissions)
