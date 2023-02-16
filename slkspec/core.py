@@ -332,7 +332,7 @@ class SLKFileSystem(AbstractFileSystem):
                information dicts if detail is True.
         """
         path = Path(path)
-        filelist = pyslk.list(str(path)).split("\n")
+        filelist = pyslk.slk_list(str(path)).split("\n")
         detail_list: List[FileInfo] = []
         types = {"d": "directory", "-": "file"}
         for file_entry in filelist[:-2]:
