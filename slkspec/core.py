@@ -147,7 +147,7 @@ class SLKFile(io.IOBase):
         if search_id is None:
             raise FileNotFoundError("No files found in archive.")
         logger.debug("Retrieving files for search id: %i", search_id)
-        pyslk.slk_retrieve(search_id, self.slk_cache, preserve_path=True)
+        pyslk.slk_retrieve(search_id, str(self.slk_cache), preserve_path=True)
         logger.debug("Adjusting file permissions")
         for out_file in retrieval_requests:
             local_path = self.slk_cache / Path(out_file.strip("/"))
