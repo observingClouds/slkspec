@@ -86,6 +86,7 @@ class SLKFile(io.IOBase):
         self,
         url: str,
         local_file: str,
+        slk_cache: str,
         *,
         override: bool = True,
         mode: str = "rb",
@@ -102,6 +103,7 @@ class SLKFile(io.IOBase):
             kwargs.setdefault("encoding", "utf-8")
         self._file = str(Path(local_file).expanduser().absolute())
         self._url = str(url)
+        self.slk_cache = str(slk_cache)
         self.touch = touch
         self.file_permissions = file_permissions
         self._order_num = 0
@@ -135,20 +137,23 @@ class SLKFile(io.IOBase):
         """Get items from the tape archive."""
 
         retrieval_requests: Dict[Path, List[str]] = defaultdict(list)
+        import ipdb
+
+        ipdb.set_trace()
         logger.debug("Retrieving %i items from tape", len(retrieve_files))
-        for inp_file, out_dir in retrieve_files:
-            retrieval_requests[Path(out_dir)].append(inp_file)
-        for output_dir, inp_files in retrieval_requests.items():
-            output_dir.mkdir(parents=True, exist_ok=True, mode=self.file_permissions)
-            logger.debug("Creating slk query for %i files", len(inp_files))
-            search_id = pyslk.search(pyslk.slk_gen_file_query(inp_files))
-            if search_id is None:
-                raise FileNotFoundError("No files found in archive.")
-            logger.debug("Retrieving files for search id: %i", search_id)
-            pyslk.slk_retrieve(search_id, str(output_dir))
-            logger.debug("Adjusting file permissions")
-            for out_file in map(Path, inp_files):
-                (output_dir / out_file.name).chmod(self.file_permissions)
+        # for inp_file, out_dir in retrieve_files:
+        #    retrieval_requests[Path(out_dir)].append(inp_file)
+        # for output_dir, inp_files in retrieval_requests.items():
+        #    output_dir.mkdir(parents=True, exist_ok=True, mode=self.file_permissions)
+        logger.debug("Creating slk query for %i files", len(retrieve_files))
+        search_id = pyslk.search(pyslk.slk_gen_file_query(inp_files))
+        if search_id is None:
+            raise FileNotFoundError("No files found in archive.")
+        logger.debug("Retrieving files for search id: %i", search_id)
+        pyslk.slk_retrieve(search_id, self.slk_cache)
+        # logger.debug("Adjusting file permissions")
+        #    for out_file in map(Path, inp_files):
+        #        (output_dir / out_file.name).chmod(self.file_permissions)
 
     def _cache_files(self) -> None:
         time.sleep(self.delay)
