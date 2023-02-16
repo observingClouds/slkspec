@@ -3,7 +3,6 @@ from __future__ import annotations
 import io
 import logging
 import os
-import re
 import threading
 import time
 import warnings
@@ -25,8 +24,8 @@ from typing import (
     overload,
 )
 
+import pyslk
 from fsspec.spec import AbstractFileSystem
-from pyslk import pyslk
 
 logger = logging.getLogger("slkspec")
 logger.setLevel(logging.INFO)
@@ -142,11 +141,9 @@ class SLKFile(io.IOBase):
         for output_dir, inp_files in retrieval_requests.items():
             output_dir.mkdir(parents=True, exist_ok=True, mode=self.file_permissions)
             logger.debug("Creating slk query for %i files", len(inp_files))
-            search_str = pyslk.slk_search(pyslk.slk_gen_file_query(inp_files))
-            search_id_re = re.search("Search ID: [0-9]*", search_str)
-            if search_id_re is None:
+            search_id = pyslk.search(pyslk.slk_gen_file_query(inp_files))
+            if search_id is None:
                 raise FileNotFoundError("No files found in archive.")
-            search_id = int(search_id_re.group(0)[11:])
             logger.debug("Retrieving files for search id: %i", search_id)
             pyslk.slk_retrieve(search_id, str(output_dir))
             logger.debug("Adjusting file permissions")
@@ -335,7 +332,7 @@ class SLKFileSystem(AbstractFileSystem):
                information dicts if detail is True.
         """
         path = Path(path)
-        filelist = pyslk.slk_list(str(path)).split("\n")
+        filelist = pyslk.list(str(path)).split("\n")
         detail_list: List[FileInfo] = []
         types = {"d": "directory", "-": "file"}
         for file_entry in filelist[:-2]:
