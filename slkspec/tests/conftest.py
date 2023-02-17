@@ -42,10 +42,15 @@ class SLKMock:
         """Mock slk_gen_file_qeury."""
         return [f for f in inp_files if Path(f).exists()]
 
-    def slk_retrieve(self, search_id: int, out_dir: str) -> None:
+    def slk_retrieve(self, search_id: int, out_dir: str, preserve_path: bool) -> None:
         """Mock slk_retrieve."""
         for inp_file in map(Path, self._cache[search_id]):
-            shutil.copy(inp_file, Path(out_dir) / inp_file.name)
+            if preserve_path:
+                outfile = Path(out_dir) / Path(str(inp_file).strip(inp_file.root))
+                outfile.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(inp_file, outfile)
+            else:
+                shutil.copy(inp_file, Path(out_dir) / inp_file.name)
 
 
 def create_data(variable_name: str, size: int) -> xr.Dataset:
