@@ -6,7 +6,6 @@ import os
 import threading
 import time
 import warnings
-from collections import defaultdict
 from getpass import getuser
 from pathlib import Path
 from queue import Queue
@@ -46,6 +45,9 @@ class SLKFile(io.IOBase):
         Source path of the file that should be retrieved.
     local_file: str
         Destination path of the downloaded file.
+    slk_cache: str | Path
+        Destination of the temporary storage. This directory is used to
+        retrieve data from tape.
     override: bool, default: False
         Override existing files
     touch: bool, default: True
@@ -86,6 +88,7 @@ class SLKFile(io.IOBase):
         self,
         url: str,
         local_file: str,
+        slk_cache: Union[str, Path],
         *,
         override: bool = True,
         mode: str = "rb",
@@ -102,6 +105,7 @@ class SLKFile(io.IOBase):
             kwargs.setdefault("encoding", "utf-8")
         self._file = str(Path(local_file).expanduser().absolute())
         self._url = str(url)
+        self.slk_cache = Path(slk_cache)
         self.touch = touch
         self.file_permissions = file_permissions
         self._order_num = 0
@@ -134,21 +138,20 @@ class SLKFile(io.IOBase):
     def _retrieve_items(self, retrieve_files: list[tuple[str, str]]) -> None:
         """Get items from the tape archive."""
 
-        retrieval_requests: Dict[Path, List[str]] = defaultdict(list)
+        retrieval_requests: List[str] = list()
         logger.debug("Retrieving %i items from tape", len(retrieve_files))
-        for inp_file, out_dir in retrieve_files:
-            retrieval_requests[Path(out_dir)].append(inp_file)
-        for output_dir, inp_files in retrieval_requests.items():
-            output_dir.mkdir(parents=True, exist_ok=True, mode=self.file_permissions)
-            logger.debug("Creating slk query for %i files", len(inp_files))
-            search_id = pyslk.search(pyslk.slk_gen_file_query(inp_files))
-            if search_id is None:
-                raise FileNotFoundError("No files found in archive.")
-            logger.debug("Retrieving files for search id: %i", search_id)
-            pyslk.slk_retrieve(search_id, str(output_dir))
-            logger.debug("Adjusting file permissions")
-            for out_file in map(Path, inp_files):
-                (output_dir / out_file.name).chmod(self.file_permissions)
+        for inp_file, _ in retrieve_files:
+            retrieval_requests.append(inp_file)
+        logger.debug("Creating slk query for %i files", len(retrieve_files))
+        search_id = pyslk.search(pyslk.slk_gen_file_query(retrieval_requests))
+        if search_id is None:
+            raise FileNotFoundError("No files found in archive.")
+        logger.debug("Retrieving files for search id: %i", search_id)
+        pyslk.slk_retrieve(search_id, str(self.slk_cache), preserve_path=True)
+        logger.debug("Adjusting file permissions")
+        for out_file in retrieval_requests:
+            local_path = self.slk_cache / Path(out_file.strip("/"))
+            local_path.chmod(self.file_permissions)
 
     def _cache_files(self) -> None:
         time.sleep(self.delay)
@@ -360,6 +363,7 @@ class SLKFileSystem(AbstractFileSystem):
         return SLKFile(
             str(path),
             str(local_path),
+            self.slk_cache,
             mode=mode,
             override=self.override,
             touch=self.touch,
