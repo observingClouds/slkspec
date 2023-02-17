@@ -1,6 +1,7 @@
 """pytest definitions to run the unittests."""
 from __future__ import annotations
 
+import builtins
 import shutil
 from pathlib import Path
 from subprocess import PIPE, run
@@ -17,7 +18,7 @@ import xarray as xr
 class SLKMock:
     """A mock that emulates what pyslk is doing."""
 
-    def __init__(self, _cache: dict[int, list[str]] = {}) -> None:
+    def __init__(self, _cache: dict[int, builtins.list[str]] = {}) -> None:
         self._cache = _cache
 
     def slk_list(self, inp_path: str) -> str:
@@ -29,15 +30,15 @@ class SLKMock:
         )
         return "\n".join(res[1:] + [res[0]])
 
-    def slk_search(self, inp_f: list[str]) -> str:
+    def search(self, inp_f: builtins.list[str]) -> int | None:
         """Mock slk_search."""
         if not inp_f:
-            return ""
+            return None
         hash_value = abs(hash(",".join(inp_f)))
         self._cache[hash_value] = inp_f
-        return f"Search ID: {hash_value} foo"
+        return hash_value
 
-    def slk_gen_file_query(self, inp_files: list[str]) -> list[str]:
+    def slk_gen_file_query(self, inp_files: builtins.list[str]) -> builtins.list[str]:
         """Mock slk_gen_file_qeury."""
         return [f for f in inp_files if Path(f).exists()]
 
