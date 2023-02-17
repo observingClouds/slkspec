@@ -21,7 +21,7 @@ class SLKMock:
     def __init__(self, _cache: dict[int, builtins.list[str]] = {}) -> None:
         self._cache = _cache
 
-    def list(self, inp_path: str) -> str:
+    def slk_list(self, inp_path: str) -> str:
         """Mock the slk_list method."""
         res = (
             run(["ls", "-l", inp_path], stdout=PIPE, stderr=PIPE)
