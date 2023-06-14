@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 # Version: 0.21
 
 """The Versioneer - like a rocketeer, but for versions.
