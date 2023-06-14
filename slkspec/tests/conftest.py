@@ -1,6 +1,7 @@
 """pytest definitions to run the unittests."""
 from __future__ import annotations
 
+import builtins
 import shutil
 from pathlib import Path
 from subprocess import PIPE, run
@@ -17,8 +18,7 @@ import xarray as xr
 class SLKMock:
     """A mock that emulates what pyslk is doing."""
 
-    def __init__(self, _cache: dict[int, list[str]] = {}) -> None:
-
+    def __init__(self, _cache: dict[int, builtins.list[str]] = {}) -> None:
         self._cache = _cache
 
     def slk_list(self, inp_path: str) -> str:
@@ -30,22 +30,27 @@ class SLKMock:
         )
         return "\n".join(res[1:] + [res[0]])
 
-    def slk_search(self, inp_f: list[str]) -> str:
+    def search(self, inp_f: builtins.list[str]) -> int | None:
         """Mock slk_search."""
         if not inp_f:
-            return ""
+            return None
         hash_value = abs(hash(",".join(inp_f)))
         self._cache[hash_value] = inp_f
-        return f"Search ID: {hash_value} foo"
+        return hash_value
 
-    def slk_gen_file_query(self, inp_files: list[str]) -> list[str]:
+    def slk_gen_file_query(self, inp_files: builtins.list[str]) -> builtins.list[str]:
         """Mock slk_gen_file_qeury."""
         return [f for f in inp_files if Path(f).exists()]
 
-    def slk_retrieve(self, search_id: int, out_dir: str) -> None:
+    def slk_retrieve(self, search_id: int, out_dir: str, preserve_path: bool) -> None:
         """Mock slk_retrieve."""
         for inp_file in map(Path, self._cache[search_id]):
-            shutil.copy(inp_file, Path(out_dir) / inp_file.name)
+            if preserve_path:
+                outfile = Path(out_dir) / Path(str(inp_file).strip(inp_file.root))
+                outfile.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(inp_file, outfile)
+            else:
+                shutil.copy(inp_file, Path(out_dir) / inp_file.name)
 
 
 def create_data(variable_name: str, size: int) -> xr.Dataset:
@@ -89,7 +94,7 @@ def patch_dir() -> Generator[Path, None, None]:
 
 @pytest.fixture(scope="session")
 def save_dir() -> Generator[Path, None, None]:
-    """Crate a temporary directory."""
+    """Create a temporary directory."""
     with TemporaryDirectory() as td:
         yield Path(td)
 
@@ -120,4 +125,17 @@ def netcdf_files(
             )
             out_file.parent.mkdir(exist_ok=True, parents=True)
             data.sel(time=time).to_netcdf(out_file)
+        yield Path(td)
+
+
+@pytest.fixture(scope="session")
+def zarr_file(
+    data: xr.Dataset,
+) -> Generator[Path, None, None]:
+    """Save data with a blob to file."""
+
+    with TemporaryDirectory() as td:
+        out_file = Path(td) / "the_project" / "test1" / "precip" / "precip.zarr"
+        out_file.parent.mkdir(exist_ok=True, parents=True)
+        data.to_zarr(out_file)
         yield Path(td)

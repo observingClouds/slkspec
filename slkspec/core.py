@@ -3,10 +3,9 @@ from __future__ import annotations
 import io
 import logging
 import os
-import re
 import threading
+import time
 import warnings
-from collections import defaultdict
 from getpass import getuser
 from pathlib import Path
 from queue import Queue
@@ -24,8 +23,8 @@ from typing import (
     overload,
 )
 
+import pyslk
 from fsspec.spec import AbstractFileSystem
-from pyslk import pyslk
 
 logger = logging.getLogger("slkspec")
 logger.setLevel(logging.INFO)
@@ -46,6 +45,9 @@ class SLKFile(io.IOBase):
         Source path of the file that should be retrieved.
     local_file: str
         Destination path of the downloaded file.
+    slk_cache: str | Path
+        Destination of the temporary storage. This directory is used to
+        retrieve data from tape.
     override: bool, default: False
         Override existing files
     touch: bool, default: True
@@ -76,7 +78,6 @@ class SLKFile(io.IOBase):
         url = fsspec.open("slk:////arch/bb1203/data.nc",
                           slk_cache="/scratch/b/b12346").open()
         dset = xr.open_dataset(url)
-
     """
 
     write_msg: str = "Write mode is not suppored"
@@ -87,11 +88,13 @@ class SLKFile(io.IOBase):
         self,
         url: str,
         local_file: str,
+        slk_cache: Union[str, Path],
         *,
         override: bool = True,
         mode: str = "rb",
         touch: bool = True,
         file_permissions: int = 0o3777,
+        delay: int = 2,
         _lock: threading.Lock = _retrieval_lock,
         _file_queue: Queue[Tuple[str, str]] = FileQueue,
         **kwargs: Any,
@@ -102,6 +105,7 @@ class SLKFile(io.IOBase):
             kwargs.setdefault("encoding", "utf-8")
         self._file = str(Path(local_file).expanduser().absolute())
         self._url = str(url)
+        self.slk_cache = Path(slk_cache)
         self.touch = touch
         self.file_permissions = file_permissions
         self._order_num = 0
@@ -113,6 +117,7 @@ class SLKFile(io.IOBase):
         self.error = "strict"
         self.encoding = kwargs.get("encoding")
         self.write_through = False
+        self.delay = delay
         self._file_queue = _file_queue
         print(self._file)
         with _lock:
@@ -133,25 +138,23 @@ class SLKFile(io.IOBase):
     def _retrieve_items(self, retrieve_files: list[tuple[str, str]]) -> None:
         """Get items from the tape archive."""
 
-        retrieval_requests: Dict[Path, List[str]] = defaultdict(list)
+        retrieval_requests: List[str] = list()
         logger.debug("Retrieving %i items from tape", len(retrieve_files))
-        for inp_file, out_dir in retrieve_files:
-            retrieval_requests[Path(out_dir)].append(inp_file)
-        for output_dir, inp_files in retrieval_requests.items():
-            output_dir.mkdir(parents=True, exist_ok=True, mode=self.file_permissions)
-            logger.debug("Creating slk query for %i files", len(inp_files))
-            search_str = pyslk.slk_search(pyslk.slk_gen_file_query(inp_files))
-            search_id_re = re.search("Search ID: [0-9]*", search_str)
-            if search_id_re is None:
-                raise ValueError("No files found in archive.")
-            search_id = int(search_id_re.group(0)[11:])
-            logger.debug("Retrieving files for search id: %i", search_id)
-            pyslk.slk_retrieve(search_id, str(output_dir))
-            logger.debug("Adjusting file permissions")
-            for out_file in map(Path, inp_files):
-                (output_dir / out_file.name).chmod(self.file_permissions)
+        for inp_file, _ in retrieve_files:
+            retrieval_requests.append(inp_file)
+        logger.debug("Creating slk query for %i files", len(retrieve_files))
+        search_id = pyslk.search(pyslk.slk_gen_file_query(retrieval_requests))
+        if search_id is None:
+            raise FileNotFoundError("No files found in archive.")
+        logger.debug("Retrieving files for search id: %i", search_id)
+        pyslk.slk_retrieve(search_id, str(self.slk_cache), preserve_path=True)
+        logger.debug("Adjusting file permissions")
+        for out_file in retrieval_requests:
+            local_path = self.slk_cache / Path(out_file.strip("/"))
+            local_path.chmod(self.file_permissions)
 
     def _cache_files(self) -> None:
+        time.sleep(self.delay)
         with self._lock:
             items = []
             if self._file_queue.qsize() > 0:
@@ -159,7 +162,14 @@ class SLKFile(io.IOBase):
                 for _ in range(self._file_queue.qsize() - 1):
                     items.append(self._file_queue.get())
                     self._file_queue.task_done()
-                self._retrieve_items(items)
+                try:
+                    self._retrieve_items(items)
+                except Exception as error:
+                    _ = [
+                        self._file_queue.get() for _ in range(self._file_queue.qsize())
+                    ]
+                    self._file_queue.task_done()
+                    raise error
                 _ = self._file_queue.get()
                 self._file_queue.task_done()
         self._file_queue.join()
@@ -171,9 +181,8 @@ class SLKFile(io.IOBase):
         return self.name
 
     def tell(self) -> int:
-        if self._file_obj is not None:
-            return self._file_obj.tell()
-        self._cache_files()
+        if self._file_obj is None:
+            self._cache_files()
         return self._file_obj.tell()  # type: ignore
 
     def seek(self, target: int) -> int:  # type: ignore
@@ -251,6 +260,7 @@ class SLKFileSystem(AbstractFileSystem):
     """
 
     protocol = "slk"
+    local_file = True
     sep = "/"
 
     def __init__(
@@ -259,6 +269,7 @@ class SLKFileSystem(AbstractFileSystem):
         slk_cache: Optional[Union[str, Path]] = None,
         file_permissions: int = 0o3777,
         touch: bool = True,
+        delay: int = 2,
         override: bool = False,
         **storage_options: Any,
     ):
@@ -268,7 +279,12 @@ class SLKFileSystem(AbstractFileSystem):
             loop=None,
             **storage_options,
         )
-        slk_cache = slk_cache or os.environ.get("SLK_CACHE")
+        slk_options = storage_options.get("slk", {})
+        slk_cache = (
+            slk_options.get("slk_cache", None)
+            or slk_cache
+            or os.environ.get("SLK_CACHE")
+        )
         if not slk_cache:
             slk_cache = f"/scratch/{getuser()[0]}/{getuser()}"
             warnings.warn(
@@ -281,6 +297,7 @@ class SLKFileSystem(AbstractFileSystem):
         self.touch = touch
         self.slk_cache = Path(slk_cache)
         self.override = override
+        self.delay = delay
         self.file_permissions = file_permissions
 
     @overload
@@ -346,9 +363,11 @@ class SLKFileSystem(AbstractFileSystem):
         return SLKFile(
             str(path),
             str(local_path),
+            self.slk_cache,
             mode=mode,
             override=self.override,
             touch=self.touch,
+            delay=self.delay,
             encoding=kwargs.get("encoding"),
             file_permissions=self.file_permissions,
         )
