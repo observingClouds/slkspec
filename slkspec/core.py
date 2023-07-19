@@ -2,6 +2,7 @@ import logging
 import os
 from pathlib import Path
 
+import pyslk
 from fsspec.spec import AbstractFileSystem
 from pyslk import pyslk as pslk
 
@@ -107,7 +108,7 @@ class SLKFileSystem(AbstractFileSystem):
                 return f
 
     def _get_file(self, lpath, rpath, **kwargs):
-        pslk.slk_retrieve(rpath, lpath)
+        pyslk.retrieve(rpath, lpath, preserve_path=False, skip_exists=True)
 
     def _open(
         self,
