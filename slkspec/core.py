@@ -35,7 +35,7 @@ MAX_RETRIES = 2
 MAX_PARALLEL_RECALLS = 4
 MAX_RETRIES_RECALL = 3
 FileQueue: Queue[Tuple[str, str]] = Queue(maxsize=-1)
-FileInfo = TypedDict("FileInfo", {"name": str, "size": Literal[None], "type": str})
+FileInfo = TypedDict("FileInfo", {"name": str, "size": Union[int, None], "type": str})
 _retrieval_lock = threading.Lock()
 
 
@@ -156,7 +156,7 @@ class SLKFile(io.IOBase):
         for inp_file, out_dir in retrieve_files:
             self._mkdirs(out_dir)
             # this `mkdir` indirectly sets proper access permissions for this folder
-            out_file: Path = os.path.join(os.path.expanduser(out_dir), Path(inp_file).name)
+            out_file: str = os.path.join(os.path.expanduser(out_dir), Path(inp_file).name)
             if os.path.exists(out_file):
                 details_inp_file = pyslk.list_clone_file(inp_file, print_timestamps_as_seconds_since_1970=True)
                 size_out_file = os.path.getsize(out_file)
@@ -216,7 +216,7 @@ class SLKFile(io.IOBase):
         # +==========================================================
         # | start _start_recalls()
         # +==========================================================
-        def _start_recalls():
+        def _start_recalls() -> None:
             nonlocal file_ids_multiple_tapes
             nonlocal tapes_success
             nonlocal multi_tape_files_success
@@ -233,8 +233,11 @@ class SLKFile(io.IOBase):
             nonlocal tapes
             nonlocal tape_file_mapping
             file_ids: list[int]
+            job_ids_to_be_removed: set[int]
             job_id: int
             logger.debug("Recall function started")
+            msg: str
+            job_status: pyslk.base.stati.StatusJob
 
             # +----------------------------------------------------------
             # | CHECK IF WE NEED TO RUN THIS FUNCTION
@@ -273,35 +276,35 @@ class SLKFile(io.IOBase):
             # check if there are jobs running for whole tapes:
             logger.info("Number of running jobs based on tape: %i", len(job_tape_mapping))
             if not all_tapes_done and len(job_tape_mapping) > 0:
-                job_ids_to_be_removed: set = set()
+                job_ids_to_be_removed = set()
                 # iterate all ids of running jobs
                 for job_id, tape_barcode in job_tape_mapping.items():
                     logger.debug("Checking status of job %i (tape: %s)", job_id, tape_barcode)
-                    job_status: pyslk.base.stati.StatusJob = pyslk.get_job_status(job_id)
+                    job_status = pyslk.get_job_status(job_id)
                     # DIFFERENT JOB STATES
                     if job_status.is_successful():
                         # SUCCESS => mark tape as successful; remember job id to be considered as free;
                         # consider this job to be done
-                        msg: str = f"Job {job_id} ended successfully (tape: {tape_barcode})."
+                        msg = f"Job {job_id} ended successfully (tape: {tape_barcode})."
                         logger.debug(msg)
                         tapes_active.remove(tape_barcode)
                         tapes_success.add(tape_barcode)
                         job_ids_to_be_removed.add(job_id)
                     elif job_status.is_queued() or job_status.is_processing():
                         # STILL WAITING OR BEING PROCESSED => do nothing; just wait further
-                        msg: str = f"Job {job_id} not finished yet (tape: {tape_barcode})."
+                        msg = f"Job {job_id} not finished yet (tape: {tape_barcode})."
                         logger.debug(msg)
                         pass
                     elif job_status.is_paused():
                         # PAUSED => something is wrong => admins manually paused job BUT keep this job as it is
                         # log warning message; but do nothing else
-                        msg: str = f"Job {job_id} in paused state (tape: {tape_barcode}). Waiting for this job."
+                        msg = f"Job {job_id} in paused state (tape: {tape_barcode}). Waiting for this job."
                         logger.warning(msg)
                     elif job_status.has_failed():
                         # FAILED => something went wrong => can be restarted
                         #   DO NOT RESTART if MAX_RETRIES_RECALL of retries have been reached
                         # log warning message; but do nothing else
-                        msg: str = (f"Job {job_id} has failed (tape: {tape_barcode}). "
+                        msg = (f"Job {job_id} has failed (tape: {tape_barcode}). "
                                     + f"{4 - len(tape_job_mapping.get(tape_barcode, list()))} of "
                                     + f"{MAX_RETRIES_RECALL} retries left")
                         logger.warning(msg)
@@ -316,20 +319,20 @@ class SLKFile(io.IOBase):
                             tapes_failed[tape_barcode] = msg
                             logger.error(msg)
                             # get file ids
-                            file_ids: list[int] = tape_file_mapping[tape_barcode]
+                            file_ids = tape_file_mapping[tape_barcode]
                             for file_id in file_ids:
                                 files_recall_failed[pyslk.resource_path(file_id)] = msg
                     else:
                         # SOMETHING ELSE ...
                         # unexpected state; log warning message; but do nothing else
-                        msg: str = (f"Job {job_id} has unexpected state (tape id: {tape_barcode}): "
+                        msg = (f"Job {job_id} has unexpected state (tape id: {tape_barcode}): "
                                     + f"{job_status.get_status_name()}. Do not proceed with this tape.")
                         logger.error(msg)
                         job_ids_to_be_removed.add(job_id)
                         tapes_active.remove(tape_barcode)
                         tapes_failed[tape_barcode] = msg
                         # get file ids
-                        file_ids: list[int] = tape_file_mapping[tape_barcode]
+                        file_ids = tape_file_mapping[tape_barcode]
                         for file_id in file_ids:
                             files_recall_failed[pyslk.resource_path(file_id)] = msg
                 # remove ids of jobs which ended
@@ -339,34 +342,34 @@ class SLKFile(io.IOBase):
             logger.info("Number of running jobs based on split files: %i", len(job_multi_tape_file_mapping))
             # check if there are jobs running for files split amongst multiple tapes:
             if not all_multi_tape_files_done and len(job_multi_tape_file_mapping) > 0:
-                job_ids_to_be_removed: set = set()
+                job_ids_to_be_removed = set()
                 # iterate all ids of running jobs
                 for job_id, file_id in job_multi_tape_file_mapping.items():
                     logger.debug("Checking status of job %i (file id: %i)", job_id, file_id)
-                    job_status: pyslk.base.stati.StatusJob = pyslk.get_job_status(job_id)
+                    job_status = pyslk.get_job_status(job_id)
                     # DIFFERENT JOB STATES
                     if job_status.is_successful():
                         # SUCCESS => mark tape as successful; remember job id to be considered as free;
                         # consider this job to be done
-                        msg: str = f"Job {job_id} ended successfully (file id: {file_id})."
+                        msg = f"Job {job_id} ended successfully (file id: {file_id})."
                         logger.debug(msg)
                         multi_tape_files_success.add(file_id)
                         job_ids_to_be_removed.add(job_id)
                     elif job_status.is_queue() or job_status.is_processing():
                         # STILL WAITING OR BEING PROCESSED => do nothing; just wait further
-                        msg: str = f"Job {job_id} not finished yet (file id: {file_id})."
+                        msg = f"Job {job_id} not finished yet (file id: {file_id})."
                         logger.debug(msg)
                         pass
                     elif job_status.is_paused():
                         # PAUSED => something is wrong => admins manually paused job BUT keep this job as it is
                         # log warning message; but do nothing else
-                        msg: str = f"Job {job_id} in paused state (file id: {file_id}). Waiting for this job."
+                        msg = f"Job {job_id} in paused state (file id: {file_id}). Waiting for this job."
                         logger.warning(msg)
                     elif job_status.has_failed():
                         # FAILED => something went wrong => can be restarted
                         #   DO NOT RESTART if MAX_RETRIES_RECALL of retries have been reached
                         # log warning message; but do nothing else
-                        msg: str = (f"Job {job_id} has failed (file id: {file_id}). "
+                        msg = (f"Job {job_id} has failed (file id: {file_id}). "
                                     + f"{4 - len(multi_tape_file_job_mapping.get(file_id, list()))} of "
                                     + f"{MAX_RETRIES_RECALL} retries left")
                         logger.warning(msg)
@@ -383,7 +386,7 @@ class SLKFile(io.IOBase):
                     else:
                         # SOMETHING ELSE ...
                         # unexpected state; log warning message; but do nothing else
-                        msg: str = (f"Job {job_id} has unexpected state (file id: {file_id}): "
+                        msg = (f"Job {job_id} has unexpected state (file id: {file_id}): "
                                     + f"{job_status.get_status_name()}. Do not proceed with this tape.")
                         logger.error(msg)
                         job_ids_to_be_removed.add(job_id)
@@ -422,22 +425,22 @@ class SLKFile(io.IOBase):
                     logger.debug("Tape %s status: %s", tape, tape_status)
                     if tape_status == "BLOCKED":
                         # do nothing
-                        msg: str = f"Tape {tape} is blocked. Skip it until next time."
+                        msg = f"Tape {tape} is blocked. Skip it until next time."
                         logger.debug(msg)
                     elif tape_status == "FAILED":
-                        msg: str = f"Tape {tape} is in failed state. Do not proceed getting data from this tape."
+                        msg = f"Tape {tape} is in failed state. Do not proceed getting data from this tape."
                         logger.error(msg)
                         tapes_failed[tape] = msg
                         # get file ids
-                        file_ids: list[int] = tape_file_mapping[tape]
+                        file_ids = tape_file_mapping[tape]
                         for file_id in file_ids:
                             files_recall_failed[pyslk.resource_path(file_id)] = msg
                     elif tape_status == "AVAILABLE":
                         # start new job
-                        msg: str = f"Tape {tape} is available. Starting recall from tape."
+                        msg = f"Tape {tape} is available. Starting recall from tape."
                         logger.debug(msg)
                         # get file ids
-                        file_ids: list[int] = tape_file_mapping[tape]
+                        file_ids = tape_file_mapping[tape]
                         # really start new job here
                         job_id = pyslk.recall_single(file_ids, resource_ids=True)
                         logger.info(f"Recall job started for tape {tape}: {str(job_id)}")
@@ -449,11 +452,11 @@ class SLKFile(io.IOBase):
                         tapes_active.add(tape)
                     else:
                         # unexpected state; log warning message; but do nothing else
-                        msg: str = f"Tape {tape} has unexpected state: {tape_status}. Do not proceed with this tape."
+                        msg = f"Tape {tape} has unexpected state: {tape_status}. Do not proceed with this tape."
                         logger.error(msg)
                         tapes_failed[tape] = msg
                         # get file ids
-                        file_ids: list[int] = tape_file_mapping[tape]
+                        file_ids = tape_file_mapping[tape]
                         for file_id in file_ids:
                             files_recall_failed[pyslk.resource_path(file_id)] = msg
 
@@ -486,7 +489,7 @@ class SLKFile(io.IOBase):
                     for tape_id, tape_barcode in pyslk.get_resource_tapes(pyslk.get_resource_path(file_id)):
                         tmp_tapes.append(tape_barcode)
                     if len(tmp_tapes) < 2:
-                        msg: str = (f"File {file_id} is in list of split files but it seems to be stored on "
+                        msg = (f"File {file_id} is in list of split files but it seems to be stored on "
                                     + f"{len(tmp_tapes)} tape.")
                         logger.error(msg)
                         raise pyslk.PySlkException(msg)
@@ -496,11 +499,11 @@ class SLKFile(io.IOBase):
                         tape_status = pyslk.get_tape_status(tape)
                         if tape_status == "BLOCKED":
                             # do nothing
-                            msg: str = f"Tape {tape} is blocked (file {file_id}). Skip split file until next time."
+                            msg = f"Tape {tape} is blocked (file {file_id}). Skip split file until next time."
                             logger.debug(msg)
                             tmp_tapes_available.append(False)
                         elif tape_status == "FAILED":
-                            msg: str = (f"Tape {tape} is in failed state (file {file_id}). Do not proceed getting "
+                            msg = (f"Tape {tape} is in failed state (file {file_id}). Do not proceed getting "
                                         + "split file.")
                             logger.error(msg)
                             multi_tape_files_failed[file_id] = msg
@@ -508,12 +511,12 @@ class SLKFile(io.IOBase):
                             tmp_tapes_available.append(False)
                         elif tape_status == "AVAILABLE":
                             # start new job
-                            msg: str = f"Tape {tape} is available (file {file_id})."
+                            msg = f"Tape {tape} is available (file {file_id})."
                             logger.debug(msg)
                             tmp_tapes_available.append(True)
                         else:
                             # unexpected state; log warning message; but do nothing else
-                            msg: str = (f"Tape {tape} has unexpected state (file {file_id}): {tape_status}. Do not "
+                            msg = (f"Tape {tape} has unexpected state (file {file_id}): {tape_status}. Do not "
                                         + "proceed with this tape.")
                             logger.error(msg)
                             multi_tape_files_failed[file_id] = msg
@@ -535,7 +538,7 @@ class SLKFile(io.IOBase):
         # | end _start_recalls()
         # +==========================================================
 
-        to_be_retrieved_files: set[str] = [inp_file for inp_file, out_dir in retrieve_files_corrected]
+        to_be_retrieved_files: set[str] = set([inp_file for inp_file, out_dir in retrieve_files_corrected])
         iterations: int = 0
         # +----------------------------------------------------------
         # | iterate as long as there are files to retrieve
@@ -598,7 +601,7 @@ class SLKFile(io.IOBase):
                     else:
                         logger.error(f"File {inp_file} cannot be retrieved for unknown reasons. Ignore.")
                         to_be_retrieved_files.remove(inp_file)
-                        files_retrieval_failed.put(inp_file, next(iter(output_dry_retrieve["FAILED"])))
+                        files_retrieval_failed[inp_file] = next(iter(output_dry_retrieve["FAILED"]))
                         continue
                 # check if file should be retrieved
                 if "ENVISAGED" in output_dry_retrieve:
@@ -614,7 +617,7 @@ class SLKFile(io.IOBase):
                         else:
                             logger.error(f"File {inp_file} could not be retrieved for unknown reasons. Ignore.")
                             to_be_retrieved_files.remove(inp_file)
-                            files_retrieval_failed.put(inp_file, next(iter(output_retrieve["FAILED"])))
+                            files_retrieval_failed[inp_file] = next(iter(output_retrieve["FAILED"]))
                             continue
                     # check if file was skipped
                     if "SKIPPED" in output_retrieve:
@@ -631,8 +634,7 @@ class SLKFile(io.IOBase):
                         to_be_retrieved_files.remove(inp_file)
                         continue
                 logger.error(f"Retrieval check for file {inp_file} yielded unexpected output. Ignore.")
-                files_retrieval_failed.put(
-                    inp_file,
+                files_retrieval_failed[inp_file] = (
                     f"unexpected JSON output of pyslk.retrieve_improved: {json.dumps(output_dry_retrieve)}"
                 )
                 to_be_retrieved_files.remove(inp_file)
