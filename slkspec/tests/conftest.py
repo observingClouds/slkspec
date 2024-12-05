@@ -1,5 +1,4 @@
 """pytest definitions to run the unittests."""
-
 from __future__ import annotations
 
 import builtins
@@ -39,19 +38,19 @@ class SLKMock:
         self._cache[hash_value] = inp_f
         return hash_value
 
-    def slk_gen_file_query(self, inp_files: builtins.list[str]) -> builtins.list[str]:
+    def gen_file_query(self, resources: builtins.list[str], **kwargs) -> builtins.list[str]:
         """Mock slk_gen_file_qeury."""
-        return [f for f in inp_files if Path(f).exists()]
+        return [f for f in resources if Path(f).exists()]
 
-    def slk_retrieve(self, search_id: int, out_dir: str, preserve_path: bool) -> None:
+    def retrieve(self, resource: int, dest_dir: str, recursive:bool = False, group: Union[bool, None] = None, delayed: bool= False, preserve_path: bool = True, **kwargs) -> None:
         """Mock slk_retrieve."""
-        for inp_file in map(Path, self._cache[search_id]):
+        for inp_file in map(Path, self._cache[resource]):
             if preserve_path:
-                outfile = Path(out_dir) / Path(str(inp_file).strip(inp_file.root))
+                outfile = Path(dest_dir) / Path(str(inp_file).strip(inp_file.root))
                 outfile.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(inp_file, outfile)
             else:
-                shutil.copy(inp_file, Path(out_dir) / inp_file.name)
+                shutil.copy(inp_file, Path(dest_dir) / inp_file.name)
 
 
 def create_data(variable_name: str, size: int) -> xr.Dataset:
