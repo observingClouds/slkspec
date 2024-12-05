@@ -1,6 +1,7 @@
-import pyslk
 import os
 from pathlib import Path
+
+import pyslk
 
 test_files = [
     dict(
