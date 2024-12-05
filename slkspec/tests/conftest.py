@@ -97,14 +97,18 @@ class SLKMock:
     ) -> pd.DataFrame:
         """Mock slk_ls."""
         return pd.DataFrame(
-            [[
-                "-rwxr-xr-x-",
-                "k204221",
-                "bm0146",
-                1268945,
-                datetime.now(),
-                "/arch/bm0146/k204221/iow/INDEX.txt"
-            ]], columns=column_names)
+            [
+                [
+                    "-rwxr-xr-x-",
+                    "k204221",
+                    "bm0146",
+                    1268945,
+                    datetime.now(),
+                    "/arch/bm0146/k204221/iow/INDEX.txt",
+                ]
+            ],
+            columns=column_names,
+        )
 
     def group_files_by_tape(
         self,
