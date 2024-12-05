@@ -24,7 +24,7 @@ from typing import (
     overload,
 )
 
-import pandas as pd
+from pandas as pd
 import pyslk
 from fsspec.spec import AbstractFileSystem
 
@@ -868,7 +868,7 @@ class SLKFileSystem(AbstractFileSystem):
                information dicts if detail is True.
         """
         path = Path(path)
-        filelist: pd.Dataframe = pyslk.ls(str(path), full_path=True)
+        filelist: pd.DataFrame = pyslk.ls(str(path), full_path=True)
         detail_list: List[FileInfo] = []
         types = {"d": "directory", "-": "file"}
         for index, row in filelist.iterrows():
