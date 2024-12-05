@@ -31,7 +31,6 @@ import pyslk
 logger = logging.getLogger("slkspec")
 logger.setLevel(logging.INFO)
 
-
 MAX_RETRIES = 2
 MAX_PARALLEL_RECALLS = 4
 MAX_RETRIES_RECALL = 3
@@ -827,16 +826,12 @@ class SLKFileSystem(AbstractFileSystem):
             self, path: Union[str, Path], detail: Literal[True], **kwargs: Any
     ) -> List[FileInfo]:
         ...
-        self, path: Union[str, Path], detail: Literal[True], **kwargs: Any
-    ) -> List[FileInfo]: ...
 
     @overload
     def ls(
             self, path: Union[str, Path], detail: Literal[False], **kwargs: Any
     ) -> List[str]:
         ...
-        self, path: Union[str, Path], detail: Literal[False], **kwargs: Any
-    ) -> List[str]: ...
 
     def ls(
             self, path: Union[str, Path], detail: bool = True, **kwargs: Any
