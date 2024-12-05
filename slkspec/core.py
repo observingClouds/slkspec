@@ -24,7 +24,7 @@ from typing import (
     overload,
 )
 
-from pandas as pd
+import pandas as pd
 import pyslk
 from fsspec.spec import AbstractFileSystem
 
