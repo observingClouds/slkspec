@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 import shutil
+from datetime import datetime
 from pathlib import Path
 from subprocess import PIPE, run
 from tempfile import TemporaryDirectory
@@ -20,10 +21,7 @@ PYSLK_DEFAULT_LIST_COLUMNS = [
     "owner",
     "group",
     "filesize",
-    "day",
-    "month",
-    "year",
-    "time",
+    "timestamp",
     "filename",
 ]
 
@@ -98,7 +96,15 @@ class SLKMock:
         full_path: bool = True,
     ) -> pd.DataFrame:
         """Mock slk_ls."""
-        return pd.DataFrame(columns=column_names)
+        return pd.DataFrame(
+            [
+                "-rwxr-xr-x-",
+                "k204221",
+                "bm0146",
+                1268945,
+                datetime.now(),
+                "/arch/bm0146/k204221/iow/INDEX.txt"
+            ], columns=column_names)
 
     def group_files_by_tape(
         self,
@@ -116,7 +122,7 @@ class SLKMock:
             {
                 "id": -1,
                 "location": "cache",
-                "label": "",
+                "barcode": "",
                 "status": "",
                 "file_count": 1,
                 "files": ["/test/test_cached.txt"],
@@ -124,7 +130,7 @@ class SLKMock:
             {
                 "id": 12345,
                 "location": "tape",
-                "label": "M12345M8",
+                "barcode": "M12345M8",
                 "status": "",
                 "file_count": 1,
                 "files": ["/test/test_tape.txt"],
