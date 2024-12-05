@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
-import pandas as pd
-import re
 import threading
 import time
 import warnings
@@ -25,8 +24,9 @@ from typing import (
     overload,
 )
 
-from fsspec.spec import AbstractFileSystem
+import pandas as pd
 import pyslk
+from fsspec.spec import AbstractFileSystem
 
 logger = logging.getLogger("slkspec")
 logger.setLevel(logging.INFO)
@@ -141,6 +141,7 @@ class SLKFile(io.IOBase):
             return self._file
         return self._url
 
+    # flake8: noqa: C901
     def _retrieve_items(self, retrieve_files: list[tuple[str, str]]) -> None:
         """Get items from the tape archive.
 
@@ -153,7 +154,7 @@ class SLKFile(io.IOBase):
         logger.debug("retrieval routine initializing")
         retrieve_files_corrected: list[tuple[str, str]] = list()
         for inp_file, out_dir in retrieve_files:
-            self._mkdirs(output_dir)
+            self._mkdirs(out_dir)
             # this `mkdir` indirectly sets proper access permissions for this folder
             out_file: Path = os.path.join(os.path.expanduser(out_dir), Path(inp_file).name)
             if os.path.exists(out_file):
@@ -249,11 +250,13 @@ class SLKFile(io.IOBase):
             # all_multi_tape_files_done is not set => check if conditions to set this are fulfilled
             #   => print user info once
             if (
-                    len([
-                        file_id for file_id in file_ids_multiple_tapes
-                        if file_id not in multi_tape_files_success_success
-                           and file_id not in multi_tape_files_failed
-                    ]) == 0
+                    len(
+                        [
+                            file_id for file_id in file_ids_multiple_tapes
+                            if file_id not in multi_tape_files_success
+                            and file_id not in multi_tape_files_failed
+                        ]
+                    ) == 0
                     and not all_multi_tape_files_done
             ):
                 all_multi_tape_files_done = True
@@ -306,7 +309,10 @@ class SLKFile(io.IOBase):
                         job_ids_to_be_removed.add(job_id)
                         if len(tape_job_mapping.get(tape_barcode, list())) >= MAX_RETRIES_RECALL + 1:
                             # consider this tape to fail permanently
-                            msg = f"max retries reached (jobs failed: {', '.join([str(job_id) for job_id in tape_job_mapping[tape_barcode]])})"
+                            msg = (
+                                    "max retries reached (jobs failed: "
+                                    + f"{', '.join([str(job_id) for job_id in tape_job_mapping[tape_barcode]])})"
+                            )
                             tapes_failed[tape_barcode] = msg
                             logger.error(msg)
                             # get file ids
@@ -367,7 +373,10 @@ class SLKFile(io.IOBase):
                         job_ids_to_be_removed.add(job_id)
                         if len(multi_tape_file_job_mapping.get(file_id, list())) >= MAX_RETRIES_RECALL + 1:
                             # consider this job to be done
-                            msg = f"max retries reached (jobs failed: {', '.join([str(job_id) for job_id in multi_tape_file_job_mapping[file_id]])})"
+                            msg = (
+                                "max retries reached (jobs failed: "
+                                + f"{', '.join([str(job_id) for job_id in multi_tape_file_job_mapping[file_id]])})"
+                            )
                             logger.error(msg)
                             multi_tape_files_failed[file_id] = msg
                             files_recall_failed[pyslk.resource_path(file_id)] = msg
@@ -534,7 +543,8 @@ class SLKFile(io.IOBase):
         # +----------------------------------------------------------
         _start_recalls()
         recall_timer = time.time()
-        # we do not generally remove files_recall_failed from to_be_retrieved because some files of failed recalls might have been recalled
+        # we do not generally remove files_recall_failed from to_be_retrieved because some files of failed recalls
+        # might have been recalled
         while len(
                 [file_path for file_path in to_be_retrieved_files if file_path not in files_recall_failed.keys()]) > 0:
             iterations += 1
@@ -561,7 +571,7 @@ class SLKFile(io.IOBase):
                 output_dry_retrieve = pyslk.retrieve_improved(inp_file, out_dir, dry_run=True, preserve_path=False)
                 # example output:
                 """
-                {'SKIPPED': {'SKIPPED_TARGET_EXISTS': ['/arch/bm0146/k204221/iow/INDEX.txt']}, 
+                {'SKIPPED': {'SKIPPED_TARGET_EXISTS': ['/arch/bm0146/k204221/iow/INDEX.txt']},
                     'FILES': {'/arch/bm0146/k204221/iow/INDEX.txt': '/home/k204221/tmp/INDEX.txt'}}
 
                 # dry run
@@ -569,10 +579,10 @@ class SLKFile(io.IOBase):
                     'FILES': {'/arch/bm0146/k204221/iow/INDEX.txt': '/home/k204221/tmp/abcdef2/INDEX.txt'}}
 
                 # after successful retrieval
-                {'ENVISAGED': {'ENVISAGED': []}, 'FILES': {'/arch/bm0146/k204221/iow/INDEX.txt': 
+                {'ENVISAGED': {'ENVISAGED': []}, 'FILES': {'/arch/bm0146/k204221/iow/INDEX.txt':
                     '/home/k204221/tmp/INDEX.txt'}, 'SUCCESS': {'SUCCESS': ['/arch/bm0146/k204221/iow/INDEX.txt']}}
 
-                {'FAILED': {'FAILED_NOT_CACHED': ['/arch/bm0146/k204221/iow/iow_data5_001.tar']}, 
+                {'FAILED': {'FAILED_NOT_CACHED': ['/arch/bm0146/k204221/iow/iow_data5_001.tar']},
                     'FILES': {'/arch/bm0146/k204221/iow/iow_data5_001.tar': '/home/k204221/tmp/iow_data5_001.tar'}}
                 """
                 # check if file should be skipped
@@ -636,7 +646,7 @@ class SLKFile(io.IOBase):
         missing_files: list[str] = [
             file_path for file_path in to_be_retrieved_files
             if file_path not in files_recall_failed.keys()
-               and file_path not in files_retrieval_failed.keys()
+            and file_path not in files_retrieval_failed.keys()
         ]
         tmp_str: str
         if len(files_recall_failed) > 0:
@@ -856,7 +866,7 @@ class SLKFileSystem(AbstractFileSystem):
                information dicts if detail is True.
         """
         path = Path(path)
-        filelist: pandas.Dataframe = pyslk.ls(str(path), full_path=True)
+        filelist: pd.Dataframe = pyslk.ls(str(path), full_path=True)
         detail_list: List[FileInfo] = []
         types = {"d": "directory", "-": "file"}
         for index, row in filelist.iterrows():
