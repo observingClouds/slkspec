@@ -1,4 +1,5 @@
 """pytest definitions to run the unittests."""
+
 from __future__ import annotations
 
 import builtins
@@ -13,6 +14,18 @@ import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
+
+PYSLK_DEFAULT_LIST_COLUMNS = [
+    "permissions",
+    "owner",
+    "group",
+    "filesize",
+    "day",
+    "month",
+    "year",
+    "time",
+    "filename",
+]
 
 
 class SLKMock:
@@ -38,11 +51,22 @@ class SLKMock:
         self._cache[hash_value] = inp_f
         return hash_value
 
-    def gen_file_query(self, resources: builtins.list[str], **kwargs) -> builtins.list[str]:
+    def gen_file_query(
+        self, resources: builtins.list[str], **kwargs
+    ) -> builtins.list[str]:
         """Mock slk_gen_file_qeury."""
         return [f for f in resources if Path(f).exists()]
 
-    def retrieve(self, resource: int, dest_dir: str, recursive:bool = False, group: Union[bool, None] = None, delayed: bool= False, preserve_path: bool = True, **kwargs) -> None:
+    def retrieve(
+        self,
+        resource: int,
+        dest_dir: str,
+        recursive: bool = False,
+        group: Union[bool, None] = None,
+        delayed: bool = False,
+        preserve_path: bool = True,
+        **kwargs,
+    ) -> None:
         """Mock slk_retrieve."""
         for inp_file in map(Path, self._cache[resource]):
             if preserve_path:
@@ -51,6 +75,61 @@ class SLKMock:
                 shutil.copy(inp_file, outfile)
             else:
                 shutil.copy(inp_file, Path(dest_dir) / inp_file.name)
+
+    def ls(
+        self,
+        path_or_id: Union[
+            str,
+            int,
+            Path,
+            list[str],
+            list[int],
+            list[Path],
+            set[str],
+            set[int],
+            set[Path],
+        ],
+        show_hidden: bool = False,
+        numeric_ids: bool = False,
+        recursive: bool = False,
+        column_names: list = PYSLK_DEFAULT_LIST_COLUMNS,
+        parse_dates: bool = True,
+        parse_sizes: bool = True,
+        full_path: bool = True,
+    ) -> pd.DataFrame:
+        """Mock slk_ls."""
+        return pd.DataFrame(columns=column_names)
+
+    def group_files_by_tape(
+        self,
+        resource_path: Union[Path, str, list, None] = None,
+        resource_ids: Union[str, list, int, None] = None,
+        search_id: Union[str, int, None] = None,
+        search_query: Union[str, None] = None,
+        recursive: bool = False,
+        max_tape_number_per_search: int = -1,
+        run_search_query: bool = False,
+        evaluate_regex_in_input: bool = False,
+    ) -> list[dict]:
+        """Mock slk_group_files_by_tape."""
+        return [
+            {
+                "id": -1,
+                "location": "cache",
+                "label": "",
+                "status": "",
+                "file_count": 1,
+                "files": ["/test/test_cached.txt"],
+            },
+            {
+                "id": 12345,
+                "location": "tape",
+                "label": "M12345M8",
+                "status": "",
+                "file_count": 1,
+                "files": ["/test/test_tape.txt"],
+            },
+        ]
 
 
 def create_data(variable_name: str, size: int) -> xr.Dataset:
