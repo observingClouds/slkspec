@@ -40,9 +40,9 @@ TapeGroup = TypedDict(
     "TapeGroup",
     {
         "id": int,
-        "location": Union["tape", "cache"],
+        "location": str,
         "description": str,
-        "barcode": Union[str, None],
+        "barcode": str,
         "status": str,
         "file_count": int,
         "files": list[str],
