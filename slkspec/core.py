@@ -35,7 +35,20 @@ MAX_RETRIES = 2
 MAX_PARALLEL_RECALLS = 4
 MAX_RETRIES_RECALL = 3
 FileQueue: Queue[Tuple[str, str]] = Queue(maxsize=-1)
-FileInfo = TypedDict("FileInfo", {"name": str, "size": Union[int, None], "type": str})
+FileInfo = TypedDict("FileInfo", {"name": str, "size": int, "type": str})
+TapeGroup = TypedDict(
+    "TapeGroup",
+    {
+        "id": int,
+        "location": Union["tape", "cache"],
+        "description": str,
+        "barcode": Union[str, None],
+        "status": str,
+        "file_count": int,
+        "files": list[str],
+        "file_ids": list[int]
+    }
+)
 _retrieval_lock = threading.Lock()
 
 
@@ -205,7 +218,7 @@ class SLKFile(io.IOBase):
             len(retrieve_files) - len(retrieve_files_corrected),
         )
         # tape grouping
-        file_tape_grouping: list[dict] = pyslk.group_files_by_tape(
+        file_tape_grouping: list[TapeGroup] = pyslk.group_files_by_tape(
             [inp_file for inp_file, out_dir in retrieve_files_corrected]
         )
         # get list of all tape barcodes (volume_ids)
