@@ -46,8 +46,8 @@ TapeGroup = TypedDict(
         "status": str,
         "file_count": int,
         "files": list[str],
-        "file_ids": list[int]
-    }
+        "file_ids": list[int],
+    },
 )
 _retrieval_lock = threading.Lock()
 
