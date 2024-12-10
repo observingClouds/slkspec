@@ -133,4 +133,4 @@ def test_list_files(patch_dir: Path, netcdf_files: Path) -> None:
         assert "name" in info
         assert "type" in info
         assert "size" in info
-        assert info["size"] is None
+        assert isinstance(info["size"], int)

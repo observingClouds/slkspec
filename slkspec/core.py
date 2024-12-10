@@ -8,6 +8,7 @@ import threading
 import time
 import warnings
 from collections import defaultdict
+from datetime import datetime
 from getpass import getuser
 from pathlib import Path
 from queue import Queue
@@ -782,7 +783,7 @@ class SLKFile(io.IOBase):
                     f"unexpected JSON output of pyslk.retrieve_improved: {json.dumps(output_dry_retrieve)}"
                 )
                 to_be_retrieved_files.remove(inp_file)
-            if time.time() - retrieve_timer < 60:
+            if len(to_be_retrieved_files) > 0 and time.time() - retrieve_timer < 60:
                 logger.info(
                     f"Waiting for {60 - (time.time() - retrieve_timer)} seconds before next retrieval."
                 )
@@ -798,15 +799,41 @@ class SLKFile(io.IOBase):
             and file_path not in files_retrieval_failed.keys()
         ]
         tmp_str: str
-        if len(files_recall_failed) > 0:
-            tmp_str = "\n  ".join(files_recall_failed)
-            logger.error(f"files, recall failed:\n  {tmp_str}")
-        if len(files_retrieval_failed) > 0:
-            tmp_str = "\n  ".join(files_retrieval_failed)
-            logger.error(f"files, retrieval failed (recall successful):\n  {tmp_str}")
-        if len(missing_files) > 0:
-            tmp_str = "\n  ".join(missing_files)
-            logger.error(f"files, missing for other reasons:\n  {tmp_str}")
+        if (
+            len(to_be_retrieved_files) > 0
+            or len(files_recall_failed.keys()) > 0
+            or len(files_retrieval_failed.keys()) > 0
+        ):
+            timestamp: str = datetime.now().strftime("%Y%m%dT%H%M%S")
+            file_failed_base: str = f"files_failed_{timestamp}"
+            file_failed_recall: str = f"{file_failed_base}_recall.txt"
+            file_failed_retrieve: str = f"{file_failed_base}_retrieve.txt"
+            file_failed_other: str = f"{file_failed_base}_other.txt"
+            logger.error(
+                "One or more files could not be retrieved from the tape archive. They "
+                + f"are printed below and written into files '{file_failed_base}_*.txt'"
+                + f"in directory '{str(self.slk_cache)}'."
+            )
+            if len(files_recall_failed) > 0:
+                tmp_str = "\n  ".join(files_recall_failed)
+                logger.error(f"files, recall failed:\n  {tmp_str}")
+                with open(os.path.join(self.slk_cache, file_failed_recall), "w") as f:
+                    for file_path, reason in files_recall_failed.items():
+                        f.write(f"{file_path}: {reason}\n")
+            if len(files_retrieval_failed) > 0:
+                tmp_str = "\n  ".join(files_retrieval_failed)
+                logger.error(
+                    f"files, retrieval failed (recall successful):\n  {tmp_str}"
+                )
+                with open(os.path.join(self.slk_cache, file_failed_retrieve), "w") as f:
+                    for file_path, reason in files_retrieval_failed.items():
+                        f.write(f"{file_path}: {reason}\n")
+            if len(missing_files) > 0:
+                tmp_str = "\n  ".join(missing_files)
+                logger.error(f"files, missing for other reasons:\n  {tmp_str}")
+                with open(os.path.join(self.slk_cache, file_failed_other), "w") as f:
+                    for file_path in missing_files:
+                        f.write(f"{file_path}: failed for unknown reasons\n")
 
     def _cache_files(self) -> None:
         time.sleep(self.delay)
