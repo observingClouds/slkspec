@@ -1,14 +1,14 @@
 import setuptools
 
-import versioneer
+# import versioneer
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name="slkspec",
-    version=versioneer.get_version(),
-    cmdclass=versioneer.get_cmdclass(),
+    #    version=versioneer.get_version(),
+    #    cmdclass=versioneer.get_cmdclass(),
     author="Hauke Schulz",
     author_email="haschulz@uw.edu",
     description="fsspec implementation for StrongLink tape archive",
