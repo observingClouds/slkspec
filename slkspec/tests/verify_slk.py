@@ -48,7 +48,7 @@ def test_search() -> None:
 
 
 def test_slk_list() -> None:
-    assert pyslk.slk_list("/arch/bm0146/k204221/iow/") == (
+    assert pyslk.list("/arch/bm0146/k204221/iow/") == (
         "-rwxr-xr-x- k204221     bm0146          1.2M   10 Jun 2020 08:25 INDEX.txt\n-"
         + "rw-r--r--t k204221     bm0146         19.5G   05 Jun 2020 17:36 iow_data2_0"
         + "01.tar\n-rw-r--r--t k204221     bm0146         19.0G   05 Jun 2020 17:38 io"

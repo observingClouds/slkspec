@@ -372,7 +372,9 @@ class SLKFile(io.IOBase):
                             # get file ids
                             file_ids = tape_file_mapping[tape_barcode]
                             for file_id in file_ids:
-                                files_recall_failed[pyslk.resource_path(file_id)] = msg
+                                files_recall_failed[
+                                    pyslk.get_resource_path(file_id)
+                                ] = msg
                     else:
                         # SOMETHING ELSE ...
                         # unexpected state; log warning message; but do nothing else
@@ -387,7 +389,7 @@ class SLKFile(io.IOBase):
                         # get file ids
                         file_ids = tape_file_mapping[tape_barcode]
                         for file_id in file_ids:
-                            files_recall_failed[pyslk.resource_path(file_id)] = msg
+                            files_recall_failed[pyslk.get_resource_path(file_id)] = msg
                 # remove ids of jobs which ended
                 for job_id_to_be_removed in job_ids_to_be_removed:
                     del job_tape_mapping[job_id_to_be_removed]
@@ -413,7 +415,7 @@ class SLKFile(io.IOBase):
                         logger.debug(msg)
                         multi_tape_files_success.add(file_id)
                         job_ids_to_be_removed.add(job_id)
-                    elif job_status.is_queue() or job_status.is_processing():
+                    elif job_status.is_queued() or job_status.is_processing():
                         # STILL WAITING OR BEING PROCESSED => do nothing; just wait further
                         msg = f"Job {job_id} not finished yet (file id: {file_id})."
                         logger.debug(msg)
@@ -445,7 +447,7 @@ class SLKFile(io.IOBase):
                             )
                             logger.error(msg)
                             multi_tape_files_failed[file_id] = msg
-                            files_recall_failed[pyslk.resource_path(file_id)] = msg
+                            files_recall_failed[pyslk.get_resource_path(file_id)] = msg
                     else:
                         # SOMETHING ELSE ...
                         # unexpected state; log warning message; but do nothing else
@@ -456,7 +458,7 @@ class SLKFile(io.IOBase):
                         logger.error(msg)
                         job_ids_to_be_removed.add(job_id)
                         multi_tape_files_failed[file_id] = msg
-                        files_recall_failed[pyslk.resource_path(file_id)] = msg
+                        files_recall_failed[pyslk.get_resource_path(file_id)] = msg
                 # remove ids of jobs which ended
                 for job_id_to_be_removed in job_ids_to_be_removed:
                     del job_multi_tape_file_mapping[job_id_to_be_removed]
@@ -515,7 +517,7 @@ class SLKFile(io.IOBase):
                         # get file ids
                         file_ids = tape_file_mapping[tape]
                         for file_id in file_ids:
-                            files_recall_failed[pyslk.resource_path(file_id)] = msg
+                            files_recall_failed[pyslk.get_resource_path(file_id)] = msg
                     elif tape_status == "AVAILABLE":
                         # start new job
                         msg = f"Tape {tape} is available. Starting recall from tape."
@@ -541,7 +543,7 @@ class SLKFile(io.IOBase):
                         # get file ids
                         file_ids = tape_file_mapping[tape]
                         for file_id in file_ids:
-                            files_recall_failed[pyslk.resource_path(file_id)] = msg
+                            files_recall_failed[pyslk.get_resource_path(file_id)] = msg
 
             # iterate over files stored on multiple tapes each
             multi_tape_files_available = [
@@ -567,7 +569,6 @@ class SLKFile(io.IOBase):
                 and len(job_tape_mapping) + len(job_multi_tape_file_mapping)
                 < MAX_PARALLEL_RECALLS
             ):
-
                 tmp_tapes_available: List[bool]
                 tmp_tapes: List[str]
                 # for loop over file ids
@@ -585,9 +586,9 @@ class SLKFile(io.IOBase):
                     # * /arch/pd1309/forcings/reanalyses/ERA5/year2009/ERA5_2009_09_part5.tar
                     tmp_tapes = list()
                     tmp_tapes_available = list()
-                    for tape_id, tape_barcode in pyslk.get_resource_tapes(
+                    for tape_id, tape_barcode in pyslk.get_resource_tape(
                         pyslk.get_resource_path(file_id)
-                    ):
+                    ).items():
                         tmp_tapes.append(tape_barcode)
                     if len(tmp_tapes) < 2:
                         msg = (
@@ -612,7 +613,7 @@ class SLKFile(io.IOBase):
                             )
                             logger.error(msg)
                             multi_tape_files_failed[file_id] = msg
-                            files_recall_failed[pyslk.resource_path(file_id)] = msg
+                            files_recall_failed[pyslk.get_resource_path(file_id)] = msg
                             tmp_tapes_available.append(False)
                         elif tape_status == "AVAILABLE":
                             # start new job
@@ -627,7 +628,7 @@ class SLKFile(io.IOBase):
                             )
                             logger.error(msg)
                             multi_tape_files_failed[file_id] = msg
-                            files_recall_failed[pyslk.resource_path(file_id)] = msg
+                            files_recall_failed[pyslk.get_resource_path(file_id)] = msg
                             tmp_tapes_available.append(False)
                     if all(tmp_tapes_available):
                         # really start new job here
@@ -1077,3 +1078,4 @@ class SLKFileSystem(AbstractFileSystem):
             file_permissions=self.file_permissions,
             dir_permissions=self.dir_permissions,
         )
+
