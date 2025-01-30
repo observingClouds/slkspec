@@ -122,24 +122,45 @@ class SLKMock:
         evaluate_regex_in_input: bool = False,
     ) -> list[dict]:
         """Mock slk_group_files_by_tape."""
-        return [
-            {
-                "id": -1,
-                "location": "cache",
-                "barcode": "",
-                "status": "",
-                "file_count": 1,
-                "files": ["/test/test_cached.txt"],
-            },
-            {
-                "id": 12345,
-                "location": "tape",
-                "barcode": "M12345M8",
-                "status": "",
-                "file_count": 1,
-                "files": ["/test/test_tape.txt"],
-            },
-        ]
+        result = []
+        for path in resource_path:
+            result.append(
+                {
+                    "id": -1,
+                    "location": "tape",
+                    "barcode": "TEST_TAPE",
+                    "status": "AVAILABLE",
+                    "file_count": 1,
+                    "files": [path],
+                    "file_ids": [49999999999],
+                }
+            )
+        return result
+
+    def get_tape_status(self, tape: int | str, details: bool = False) -> str | None:
+        return "AVAILABLE"
+
+    def recall_single(self, file_id, resource_ids: bool):
+        job_id = 12345
+        return job_id
+
+    def get_resource_tapes(self, path):
+        return ["TI", "TB"]
+
+    def get_resource_path(self, file_id):
+        return "/test/precip.zarr"
+
+    def retrieve_improved(self, resource, dest_dir, dry_run=True, preserve_path=False):
+        output = f"""
+        {{
+            "SKIPPED": {{"SKIPPED_TARGET_EXISTS": ["{resource}"]}},
+            "FILES": {{"{resource}": "{dest_dir}"}}
+        }}
+        """
+        self._cache[resource] = [resource]
+        self.retrieve(resource, dest_dir, preserve_path=preserve_path)
+
+        return output
 
 
 def create_data(variable_name: str, size: int) -> xr.Dataset:
