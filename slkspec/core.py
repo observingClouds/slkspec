@@ -1078,4 +1078,3 @@ class SLKFileSystem(AbstractFileSystem):
             file_permissions=self.file_permissions,
             dir_permissions=self.dir_permissions,
         )
-
