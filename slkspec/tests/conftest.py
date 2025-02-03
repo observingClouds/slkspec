@@ -132,7 +132,7 @@ class SLKMock:
                     "status": "AVAILABLE",
                     "file_count": 1,
                     "files": [path],
-                    "file_ids": [49999999999],
+                    "file_ids": [],
                 }
             )
         return result
@@ -140,27 +140,71 @@ class SLKMock:
     def get_tape_status(self, tape: int | str, details: bool = False) -> str | None:
         return "AVAILABLE"
 
-    def recall_single(self, file_id, resource_ids: bool):
+    def recall_single(
+        self,
+        resources: (
+            Path
+            | str
+            | int
+            | list[Path]
+            | list[str]
+            | list[int]
+            | set[Path]
+            | set[str]
+            | set[int]
+        ),
+        destination: Path | str | None = None,
+        resource_ids: bool = False,
+        search_id: bool = False,
+        recursive: bool = False,
+        preserve_path: bool = True,
+    ) -> int:
         job_id = 12345
         return job_id
 
-    def get_resource_tapes(self, path):
-        return ["TI", "TB"]
+    def get_resource_tape(self, resource_path: str | Path) -> dict[int, str] | None:
+        return {99999: "X9999999"}
 
-    def get_resource_path(self, file_id):
+    def get_resource_path(self, resource_id: str | int) -> Path | None:
         return "/test/precip.zarr"
 
-    def retrieve_improved(self, resource, dest_dir, dry_run=True, preserve_path=False):
+    def retrieve_improved(
+        self,
+        resources: (
+            Path
+            | str
+            | int
+            | list[Path]
+            | list[str]
+            | list[int]
+            | set[Path]
+            | set[str]
+            | set[int]
+        ),
+        destination: Path | str,
+        dry_run: bool = False,
+        force_overwrite: bool = False,
+        ignore_existing: bool = False,
+        resource_ids: bool = False,
+        search_id: bool = False,
+        recursive: bool = False,
+        stop_on_failed_retrieval: bool = False,
+        preserve_path: bool = True,
+        verbose: bool = False,
+    ) -> dict[Unknown, Unknown] | None:
         output = f"""
         {{
-            "SKIPPED": {{"SKIPPED_TARGET_EXISTS": ["{resource}"]}},
-            "FILES": {{"{resource}": "{dest_dir}"}}
+            "SKIPPED": {{"SKIPPED_TARGET_EXISTS": ["{resources}"]}},
+            "FILES": {{"{resources}": "{destination}"}}
         }}
         """
-        self._cache[resource] = [resource]
-        self.retrieve(resource, dest_dir, preserve_path=preserve_path)
+        self._cache[resources] = [resources]
+        self.retrieve(resources, destination, preserve_path=preserve_path)
 
         return output
+
+    class PySlkException(BaseException):
+        pass
 
 
 def create_data(variable_name: str, size: int) -> xr.Dataset:
