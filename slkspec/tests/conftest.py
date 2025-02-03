@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from subprocess import PIPE, run
 from tempfile import TemporaryDirectory
-from typing import Generator, Union
+from typing import Generator, Union, Optional
 
 import mock
 import numpy as np
@@ -191,7 +191,7 @@ class SLKMock:
         stop_on_failed_retrieval: bool = False,
         preserve_path: bool = True,
         verbose: bool = False,
-    ) -> dict[Unknown, Unknown] | None:
+    ) -> Optional[dict] | None:
         output = f"""
         {{
             "SKIPPED": {{"SKIPPED_TARGET_EXISTS": ["{resources}"]}},
