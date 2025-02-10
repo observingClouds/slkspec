@@ -79,7 +79,8 @@ class SLKFile(io.IOBase):
     file_permissions: int, default: 0o644
         Permission when creating files.
     dir_permissions: int, default: 0o3775
-        Permission when creating directories.   **kwargs:
+        Permission when creating directories.
+    **kwargs:
         Additional keyword arguments passed to the open file descriptor method.
 
     Example
@@ -139,7 +140,6 @@ class SLKFile(io.IOBase):
         self.write_through = False
         self.delay = delay
         self._file_queue = _file_queue
-        #        print(self._file)
         with _lock:
             if not Path(self._file).exists() or override:
                 self._file_queue.put((self._url, str(Path(self._file).parent)))
@@ -955,12 +955,11 @@ class SLKFileSystem(AbstractFileSystem):
         Permission when creating files.
     dir_permissions: int, default: 0o3775
         Permission when creating directories.
-
     override: bool, default: False
         Override existing files
     touch: bool, default: False
-        Update existing files on the temporary storage to prevent them
-        from being deleted. // not necessary if they are read.
+        Update `mtime` of temporary files to prevent them from being deleted. Depending on the implemented method to
+        delete temporary files this might not be necessary or have no effect.
     **storage_options:
         Additional options passed to the AbstractFileSystem class.
     """
