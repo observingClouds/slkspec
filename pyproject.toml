@@ -7,23 +7,21 @@ name = "slkspec"
 dynamic = ["version"]
 description = "fsspec implementation for StrongLink tape archive"
 readme = "README.md"
-license = { text = "MIT License" }
-authors = [{ name = "Hauke Schulz", email = "haschulz@uw.edu" }]
+license = {text = "MIT License"}
+authors = [{name = "Hauke Schulz", email = "haschulz@uw.edu"}]
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
-  "Operating System :: OS Independent",
+  "Operating System :: OS Independent"
 ]
-
 requires-python = ">=3.9"
 dependencies = [
   "fsspec>=0.9.0",
-  "pyslk @ git+https://gitlab.dkrz.de/hsm-tools/pyslk.git@master",
+  "pyslk @ git+https://gitlab.dkrz.de/hsm-tools/pyslk.git@master"
 ]
 
-[project.urls]
-Homepage = "https://github.com/observingClouds/slkspec"
-Issues = "https://github.com/observingClouds/slkspec/issues"
+[project.entry-points."fsspec.specs"]
+slk = "slkspec.SLKFileSystem"
 
 [project.optional-dependencies]
 tests = [
@@ -39,20 +37,23 @@ tests = [
   "pytest-env",
   "pytest-cov",
   "testpath",
-  "xarray",
+  "xarray"
 ]
 preffs = [
   "fastparquet",
   "preffs @ git+https://github.com/d70-t/preffs.git@main",
-  "aiohttp",
+  "aiohttp"
 ]
 
+[project.urls]
+Homepage = "https://github.com/observingClouds/slkspec"
+Issues = "https://github.com/observingClouds/slkspec/issues"
 
-[project.entry-points."fsspec.specs"]
-slk = "slkspec.SLKFileSystem"
-
-[tool.setuptools_scm]
-write_to = "slkspec/_version.py"
+[tool.black]
+target-version = ["py310"]
+exclude = '''
+_version\.py$
+'''
 
 [tool.mypy]
 files = ["slkspec/core.py"]
@@ -73,8 +74,5 @@ ignore_missing_imports = true
 [tool.mypy-pyslk]
 ignore_missing_imports = true
 
-[tool.black]
-target-version = ["py310"]
-exclude = '''
-_version\.py$
-'''
+[tool.setuptools_scm]
+write_to = "slkspec/_version.py"
