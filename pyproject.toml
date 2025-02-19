@@ -78,6 +78,5 @@ ignore_missing_imports = true
 find = {}
 
 [tool.setuptools_scm]
-write_to = "slkspec/_version.py"
 version_scheme = "post-release"
 local_scheme = "dirty-tag"
