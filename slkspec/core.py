@@ -302,14 +302,12 @@ class SLKFileSystem(AbstractFileSystem):
     @overload
     def ls(
         self, path: Union[str, Path], detail: Literal[True], **kwargs: Any
-    ) -> List[FileInfo]:
-        ...
+    ) -> List[FileInfo]: ...
 
     @overload
     def ls(
         self, path: Union[str, Path], detail: Literal[False], **kwargs: Any
-    ) -> List[str]:
-        ...
+    ) -> List[str]: ...
 
     def ls(
         self, path: Union[str, Path], detail: bool = True, **kwargs: Any

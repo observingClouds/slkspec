@@ -1,4 +1,5 @@
 """Testing opening of datasets."""
+
 import os
 import shutil
 from pathlib import Path
