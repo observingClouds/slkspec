@@ -51,9 +51,6 @@ Issues = "https://github.com/observingClouds/slkspec/issues"
 
 [tool.black]
 target-version = ["py310"]
-exclude = '''
-_version\.py$
-'''
 
 [tool.mypy]
 files = ["slkspec/core.py"]
