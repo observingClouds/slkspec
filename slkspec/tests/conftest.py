@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import builtins
+import json
 import shutil
 from datetime import datetime
 from pathlib import Path
 from subprocess import PIPE, run
 from tempfile import TemporaryDirectory
-from typing import Generator, Union, Optional
+from typing import Generator, Optional, Union
 
 import mock
 import numpy as np
@@ -41,7 +42,7 @@ class SLKMock:
         )
         return "\n".join(res[1:] + [res[0]])
 
-    def search(self, inp_f: builtins.list[str]) -> int | None:
+    def search(self, inp_f: list[str]) -> int | None:
         """Mock slk_search."""
         if not inp_f:
             return None
@@ -49,10 +50,8 @@ class SLKMock:
         self._cache[hash_value] = inp_f
         return hash_value
 
-    def gen_file_query(
-        self, resources: builtins.list[str], **kwargs
-    ) -> builtins.list[str]:
-        """Mock slk_gen_file_qeury."""
+    def gen_file_query(self, resources: list[str], **kwargs) -> list[str]:
+        """Mock slk_gen_file_query."""
         return [f for f in resources if Path(f).exists()]
 
     def retrieve(
@@ -123,7 +122,20 @@ class SLKMock:
     ) -> list[dict]:
         """Mock slk_group_files_by_tape."""
         result = []
-        for path in resource_path:
+        if isinstance(resource_path, list):
+            for path in resource_path:
+                result.append(
+                    {
+                        "id": -1,
+                        "location": "tape",
+                        "barcode": "TEST_TAPE",
+                        "status": "AVAILABLE",
+                        "file_count": 1,
+                        "files": [path],
+                        "file_ids": [],
+                    }
+                )
+        if isinstance(resource_path, (Path, str)):
             result.append(
                 {
                     "id": -1,
@@ -135,6 +147,7 @@ class SLKMock:
                     "file_ids": [],
                 }
             )
+
         return result
 
     def get_tape_status(self, tape: int | str, details: bool = False) -> str | None:
@@ -159,14 +172,14 @@ class SLKMock:
         recursive: bool = False,
         preserve_path: bool = True,
     ) -> int:
-        job_id = 12345
+        job_id: int = 12345
         return job_id
 
     def get_resource_tape(self, resource_path: str | Path) -> dict[int, str] | None:
         return {99999: "X9999999"}
 
     def get_resource_path(self, resource_id: str | int) -> Path | None:
-        return "/test/precip.zarr"
+        return Path("/test/precip.zarr")
 
     def retrieve_improved(
         self,
@@ -192,14 +205,22 @@ class SLKMock:
         preserve_path: bool = True,
         verbose: bool = False,
     ) -> Optional[dict] | None:
-        output = f"""
-        {{
-            "SKIPPED": {{"SKIPPED_TARGET_EXISTS": ["{resources}"]}},
-            "FILES": {{"{resources}": "{destination}"}}
-        }}
-        """
-        self._cache[resources] = [resources]
-        self.retrieve(resources, destination, preserve_path=preserve_path)
+        resource: str
+        if isinstance(resources, (Path, str, int)):
+            resource = str(resources)
+        elif isinstance(resources, list):
+            resource = str(resources[0])
+        elif isinstance(resources, set):
+            resource = str(resources.pop())
+        output = json.loads(
+            f"""
+            {{
+                "SKIPPED": {{"SKIPPED_TARGET_EXISTS": ["{resource}"]}},
+                "FILES": {{"{resource}": "{str(destination)}"}}
+            }}
+            """
+        )
+        self._cache[abs(hash(resource))] = [resource]
 
         return output
 
