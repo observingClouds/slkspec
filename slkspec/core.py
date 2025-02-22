@@ -483,7 +483,7 @@ class SLKRecall:
             for tape_group in file_tape_grouping
             if tape_group.get("id", -1) > 0
         ]
-        all_tapes_done = len(self.tapes) == 0
+        self.all_tapes_done = len(self.tapes) == 0
         # get list of file split amongst multiple tapes
         for tape_group in file_tape_grouping:
             # check if there are files on multiple tapes included
