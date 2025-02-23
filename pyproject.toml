@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools >= 61.0", "wheel", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slkspec"
+dynamic = ["version"]
+description = "fsspec implementation for StrongLink tape archive"
+readme = "README.md"
+license = {text = "MIT License"}
+authors = [{name = "Hauke Schulz", email = "haschulz@uw.edu"}]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent"
+]
+requires-python = ">=3.9"
+dependencies = [
+  "fsspec>=0.9.0",
+  "pyslk @ git+https://gitlab.dkrz.de/hsm-tools/pyslk.git@master"
+]
+
+[project.entry-points."fsspec.specs"]
+slk = "slkspec.SLKFileSystem"
+
+[project.optional-dependencies]
+tests = [
+  "zarr<3.0.0",
+  "mypy",
+  "black",
+  "dask",
+  "flake8",
+  "mock",
+  "netCDF4",
+  "pandas",
+  "pytest",
+  "pytest-env",
+  "pytest-cov",
+  "testpath",
+  "xarray"
+]
+preffs = [
+  "fastparquet",
+  "preffs @ git+https://github.com/d70-t/preffs.git@main",
+  "aiohttp"
+]
+
+[project.urls]
+Homepage = "https://github.com/observingClouds/slkspec"
+Issues = "https://github.com/observingClouds/slkspec/issues"
+
+[tool.black]
+target-version = ["py310"]
+
+[tool.mypy]
+files = ["slkspec/core.py"]
+strict = false
+warn_unused_ignores = true
+warn_unreachable = true
+show_error_codes = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+warn_redundant_casts = true
+
+[tool.mypy-fsspec]
+ignore_missing_imports = true
+
+[tool.mypy-pyslk]
+ignore_missing_imports = true
+
+[tool.setuptools.packages]
+find = {}
+
+[tool.setuptools_scm]
+version_scheme = "post-release"
+local_scheme = "dirty-tag"

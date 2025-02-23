@@ -12,7 +12,6 @@ from queue import Queue
 from typing import (
     IO,
     Any,
-    AnyStr,
     Dict,
     List,
     Literal,
@@ -205,7 +204,7 @@ class SLKFile(io.IOBase):
         """Compatibility method."""
         return True
 
-    def read(self, size: int = -1) -> AnyStr:
+    def read(self, size: int = -1) -> Any:
         """The the content of a file-stream.
 
         size: int, default: -1
@@ -303,14 +302,12 @@ class SLKFileSystem(AbstractFileSystem):
     @overload
     def ls(
         self, path: Union[str, Path], detail: Literal[True], **kwargs: Any
-    ) -> List[FileInfo]:
-        ...
+    ) -> List[FileInfo]: ...
 
     @overload
     def ls(
         self, path: Union[str, Path], detail: Literal[False], **kwargs: Any
-    ) -> List[str]:
-        ...
+    ) -> List[str]: ...
 
     def ls(
         self, path: Union[str, Path], detail: bool = True, **kwargs: Any

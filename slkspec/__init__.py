@@ -1,9 +1,10 @@
+import importlib.metadata
+
 from fsspec import register_implementation
 
-from . import _version
 from .core import SLKFileSystem, logger
 
-__version__ = _version.get_versions()["version"]
+__version__ = importlib.metadata.version("slkspec")
 
 register_implementation(SLKFileSystem.protocol, SLKFileSystem)
 
