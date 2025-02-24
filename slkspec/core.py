@@ -465,6 +465,11 @@ class SLKRecall:
         self.multi_tape_files_failed: dict[int, str] = dict()
         # list of files which recalls failed
         self.files_recall_failed: dict[str, str] = dict()
+        # list of files for which recall started
+        self.files_recall_started: list[str] = list()
+        self._files_recall_newly_started: list[str] = list()
+        # list of files which were cached from the beginning
+        self.files_cached_from_beginning: list[str] = list()
         # mapping from tape to file list
         self.tape_file_mapping: dict[str, list[int]] = defaultdict(list)
         # initialize file-tape-grouping
@@ -497,6 +502,11 @@ class SLKRecall:
                 and tape_group.get("id", -1) > 0
             ):
                 self.tape_file_mapping[tape_group["barcode"]] = tape_group["file_ids"]
+            if (
+                tape_group.get("id", 0) == -1
+                and tape_group.get("location", "") == "cache"
+            ):
+                self.files_cached_from_beginning = tape_group["files"]
         self.all_multi_tape_files_done = len(self.file_ids_multiple_tapes) == 0
         self.grouping_initialized = True
 
@@ -770,6 +780,11 @@ class SLKRecall:
                     self.tape_job_mapping[tape].append(job_id)
                     # just the active tapes
                     self.tapes_active.add(tape)
+                    # append list of files which recall started to respective lists
+                    for file_id in file_ids:
+                        file_name_tmp: str = pyslk.get_resource_path(file_id)
+                        self.files_recall_started.append(file_name_tmp)
+                        self._files_recall_newly_started.append(file_name_tmp)
                 else:
                     # unexpected state; log warning message; but do nothing else
                     msg = f"Tape {tape} has unexpected state: {tape_status}. Do not proceed with this tape."
@@ -891,6 +906,11 @@ class SLKRecall:
             ]
         ) + len(self.job_multi_tape_file_mapping)
 
+    def get_files_recall_newly_started(self) -> list[str]:
+        output: list[str] = self._files_recall_newly_started
+        self._files_recall_newly_started = list()
+        return output
+
 
 class SLKRetrieval:
 
@@ -904,22 +924,25 @@ class SLKRetrieval:
         self.slk_recall: SLKRecall = slk_recall
         self.retrieve_files_corrected: list[tuple[str, str]] = retrieve_files_corrected
         # TODO: retrieve only files which are in the cache or are currently being recalled
+        # self.to_be_retrieved_files: set[str] = set(
+        #     [inp_file for inp_file, out_dir in self.retrieve_files_corrected]
+        # )
         self.to_be_retrieved_files: set[str] = set(
-            [inp_file for inp_file, out_dir in self.retrieve_files_corrected]
+            slk_recall.files_cached_from_beginning
         )
         self.files_retrieval_failed: dict[str, str] = files_retrieval_failed
         self.file_permissions: int = file_permissions
         self.recall_timer: float = time.time()
 
     def number_files_to_be_retrieved(self) -> int:
-        return len(self.to_be_retrieved_files)
+        return len(self.retrieve_files_corrected)
 
     def number_files_to_be_realistically_retrieved(self) -> int:
-        return len(
+        return self.number_files_to_be_retrieved() - len(
             [
                 file_path
                 for file_path in self.to_be_retrieved_files
-                if not self.slk_recall.recall_of_file_failed(file_path)
+                if self.slk_recall.recall_of_file_failed(file_path)
             ]
         )
 
@@ -934,6 +957,10 @@ class SLKRetrieval:
             if time.time() - self.recall_timer > 300:
                 self.slk_recall.start_recalls()
                 self.recall_timer = time.time()
+            # append files which recall started to 'to_be_retrieved_files'
+            self.to_be_retrieved_files.update(
+                set(self.slk_recall.get_files_recall_newly_started())
+            )
             # check if file should be retrieved or not
             output_dry_retrieve = pyslk.retrieve_improved(
                 inp_file, out_dir, dry_run=True, preserve_path=False
@@ -1022,9 +1049,6 @@ class SLKRetrieval:
                 f"unexpected JSON output of pyslk.retrieve_improved: {json.dumps(output_dry_retrieve)}"
             )
             self.to_be_retrieved_files.remove(inp_file)
-
-    def file_to_be_retrieved(self, file_path: str) -> bool:
-        return file_path in self.to_be_retrieved_files
 
 
 def _write_file_lists(
