@@ -3,17 +3,28 @@
 from __future__ import annotations
 
 import builtins
+import json
 import shutil
+from datetime import datetime
 from pathlib import Path
 from subprocess import PIPE, run
 from tempfile import TemporaryDirectory
-from typing import Generator
+from typing import Generator, Optional, Union
 
 import mock
 import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
+
+PYSLK_DEFAULT_LIST_COLUMNS = [
+    "permissions",
+    "owner",
+    "group",
+    "filesize",
+    "timestamp",
+    "filename",
+]
 
 
 class SLKMock:
@@ -31,7 +42,7 @@ class SLKMock:
         )
         return "\n".join(res[1:] + [res[0]])
 
-    def search(self, inp_f: builtins.list[str]) -> int | None:
+    def search(self, inp_f: list[str]) -> int | None:
         """Mock slk_search."""
         if not inp_f:
             return None
@@ -39,19 +50,182 @@ class SLKMock:
         self._cache[hash_value] = inp_f
         return hash_value
 
-    def slk_gen_file_query(self, inp_files: builtins.list[str]) -> builtins.list[str]:
-        """Mock slk_gen_file_qeury."""
-        return [f for f in inp_files if Path(f).exists()]
+    def gen_file_query(self, resources: list[str], **kwargs) -> list[str]:
+        """Mock slk_gen_file_query."""
+        return [f for f in resources if Path(f).exists()]
 
-    def slk_retrieve(self, search_id: int, out_dir: str, preserve_path: bool) -> None:
+    def retrieve(
+        self,
+        resource: int,
+        dest_dir: str,
+        recursive: bool = False,
+        group: Union[bool, None] = None,
+        delayed: bool = False,
+        preserve_path: bool = True,
+        **kwargs,
+    ) -> None:
         """Mock slk_retrieve."""
-        for inp_file in map(Path, self._cache[search_id]):
+        for inp_file in map(Path, self._cache[resource]):
             if preserve_path:
-                outfile = Path(out_dir) / Path(str(inp_file).strip(inp_file.root))
+                outfile = Path(dest_dir) / Path(str(inp_file).strip(inp_file.root))
                 outfile.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(inp_file, outfile)
             else:
-                shutil.copy(inp_file, Path(out_dir) / inp_file.name)
+                shutil.copy(inp_file, Path(dest_dir) / inp_file.name)
+
+    def ls(
+        self,
+        path_or_id: Union[
+            str,
+            int,
+            Path,
+            list[str],
+            list[int],
+            list[Path],
+            set[str],
+            set[int],
+            set[Path],
+        ],
+        show_hidden: bool = False,
+        numeric_ids: bool = False,
+        recursive: bool = False,
+        column_names: list = PYSLK_DEFAULT_LIST_COLUMNS,
+        parse_dates: bool = True,
+        parse_sizes: bool = True,
+        full_path: bool = True,
+    ) -> pd.DataFrame:
+        """Mock slk_ls."""
+        return pd.DataFrame(
+            [
+                [
+                    "-rwxr-xr-x-",
+                    "k204221",
+                    "bm0146",
+                    1268945,
+                    datetime.now(),
+                    "/arch/bm0146/k204221/iow/INDEX.txt",
+                ]
+            ],
+            columns=column_names,
+        )
+
+    def group_files_by_tape(
+        self,
+        resource_path: Union[Path, str, list, None] = None,
+        resource_ids: Union[str, list, int, None] = None,
+        search_id: Union[str, int, None] = None,
+        search_query: Union[str, None] = None,
+        recursive: bool = False,
+        max_tape_number_per_search: int = -1,
+        run_search_query: bool = False,
+        evaluate_regex_in_input: bool = False,
+    ) -> list[dict]:
+        """Mock slk_group_files_by_tape."""
+        result = []
+        if isinstance(resource_path, list):
+            for path in resource_path:
+                result.append(
+                    {
+                        "id": -1,
+                        "location": "tape",
+                        "barcode": "TEST_TAPE",
+                        "status": "AVAILABLE",
+                        "file_count": 1,
+                        "files": [path],
+                        "file_ids": [],
+                    }
+                )
+        if isinstance(resource_path, (Path, str)):
+            result.append(
+                {
+                    "id": -1,
+                    "location": "tape",
+                    "barcode": "TEST_TAPE",
+                    "status": "AVAILABLE",
+                    "file_count": 1,
+                    "files": [path],
+                    "file_ids": [],
+                }
+            )
+
+        return result
+
+    def get_tape_status(self, tape: int | str, details: bool = False) -> str | None:
+        return "AVAILABLE"
+
+    def recall_single(
+        self,
+        resources: (
+            Path
+            | str
+            | int
+            | list[Path]
+            | list[str]
+            | list[int]
+            | set[Path]
+            | set[str]
+            | set[int]
+        ),
+        destination: Path | str | None = None,
+        resource_ids: bool = False,
+        search_id: bool = False,
+        recursive: bool = False,
+        preserve_path: bool = True,
+    ) -> int:
+        job_id: int = 12345
+        return job_id
+
+    def get_resource_tape(self, resource_path: str | Path) -> dict[int, str] | None:
+        return {99999: "X9999999"}
+
+    def get_resource_path(self, resource_id: str | int) -> Path | None:
+        return Path("/test/precip.zarr")
+
+    def retrieve_improved(
+        self,
+        resources: (
+            Path
+            | str
+            | int
+            | list[Path]
+            | list[str]
+            | list[int]
+            | set[Path]
+            | set[str]
+            | set[int]
+        ),
+        destination: Path | str,
+        dry_run: bool = False,
+        force_overwrite: bool = False,
+        ignore_existing: bool = False,
+        resource_ids: bool = False,
+        search_id: bool = False,
+        recursive: bool = False,
+        stop_on_failed_retrieval: bool = False,
+        preserve_path: bool = True,
+        verbose: bool = False,
+    ) -> Optional[dict] | None:
+        resource: str
+        if isinstance(resources, (Path, str, int)):
+            resource = str(resources)
+        elif isinstance(resources, list):
+            resource = str(resources[0])
+        elif isinstance(resources, set):
+            resource = str(resources.pop())
+        output = json.loads(
+            f"""
+            {{
+                "SKIPPED": {{"SKIPPED_TARGET_EXISTS": ["{resource}"]}},
+                "FILES": {{"{resource}": "{str(destination)}"}}
+            }}
+            """
+        )
+        self._cache[abs(hash(resource))] = [resource]
+
+        return output
+
+    class PySlkException(BaseException):
+        pass
 
 
 def create_data(variable_name: str, size: int) -> xr.Dataset:
