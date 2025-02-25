@@ -203,6 +203,7 @@ class SLKFile(io.IOBase):
                 slk_recall.number_active_jobs(),
                 slk_recall.number_files_in_active_jobs(),
             )
+            # TODO: wrong output
             slk_retrieval.run_retrieval()
             if (
                 len(slk_retrieval.to_be_retrieved_files) > 0
@@ -947,11 +948,9 @@ class SLKRetrieval:
         )
 
     def run_retrieval(self) -> None:
+        logger.info("Retrieving files started")
+        retrieve_counter: int = 0
         for inp_file, out_dir in self.retrieve_files_corrected:
-            # skip files which do not need to be retrieved anymore
-            if inp_file not in self.to_be_retrieved_files:
-                continue
-            Path(out_dir).mkdir(parents=True, exist_ok=True, mode=self.file_permissions)
             # check if recalls need to be started before retrieving
             # check every 5 minutes whether additional recalls need to be started
             if time.time() - self.recall_timer > 300:
@@ -961,6 +960,13 @@ class SLKRetrieval:
             self.to_be_retrieved_files.update(
                 set(self.slk_recall.get_files_recall_newly_started())
             )
+            # skip files which do not need to be retrieved anymore
+            print(inp_file + "\n")
+            print(self.to_be_retrieved_files)
+            print("\n")
+            if inp_file not in self.to_be_retrieved_files:
+                continue
+            Path(out_dir).mkdir(parents=True, exist_ok=True, mode=self.file_permissions)
             # check if file should be retrieved or not
             output_dry_retrieve = pyslk.retrieve_improved(
                 inp_file, out_dir, dry_run=True, preserve_path=False
@@ -1041,6 +1047,7 @@ class SLKRetrieval:
                         os.path.join(os.path.expanduser(out_dir), Path(inp_file).name)
                     ).chmod(self.file_permissions)
                     self.to_be_retrieved_files.remove(inp_file)
+                    retrieve_counter = retrieve_counter + 1
                     continue
             logger.error(
                 f"Retrieval check for file {inp_file} yielded unexpected output. Ignore."
@@ -1049,6 +1056,9 @@ class SLKRetrieval:
                 f"unexpected JSON output of pyslk.retrieve_improved: {json.dumps(output_dry_retrieve)}"
             )
             self.to_be_retrieved_files.remove(inp_file)
+
+        if retrieve_counter == 0:
+            logger.info("No files retrieved")
 
 
 def _write_file_lists(
