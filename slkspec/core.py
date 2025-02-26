@@ -195,20 +195,20 @@ class SLKFile(io.IOBase):
         slk_recall.start_recalls()
         # we do not generally remove files_recall_failed from to_be_retrieved because some files of failed recalls
         # might have been recalled
-        while slk_retrieval.number_files_to_be_realistically_retrieved() > 0:
+        while slk_retrieval.number_files_still_to_be_retrieved_realistically() > 0:
             iterations += 1
             retrieve_timer = time.time()
             logger.info(
                 "retrieve/recall iteration %i; %i files to be retrieved. %i recall jobs running for %i files.",
                 iterations,
-                len(slk_retrieval.to_be_retrieved_files),
+                len(slk_retrieval.files_retrieval_reasonable),
                 slk_recall.number_active_jobs(),
                 slk_recall.number_files_in_active_jobs(),
             )
             # TODO: wrong output
             slk_retrieval.run_retrieval()
             if (
-                len(slk_retrieval.to_be_retrieved_files) > 0
+                len(slk_retrieval.files_retrieval_succeeded) == 0
                 and time.time() - retrieve_timer < 60
             ):
                 logger.info(
@@ -930,24 +930,31 @@ class SLKRetrieval:
         self.slk_recall: SLKRecall = slk_recall
         self.retrieve_files_corrected: list[tuple[str, str]] = retrieve_files_corrected
         # TODO: retrieve only files which are in the cache or are currently being recalled
-        # self.to_be_retrieved_files: set[str] = set(
+        # self.files_retrieval_reasonable: set[str] = set(
         #     [inp_file for inp_file, out_dir in self.retrieve_files_corrected]
         # )
-        self.to_be_retrieved_files: set[str] = set(
+        self.files_retrieval_destination: dict[str, str] = {
+            inp_file: out_dir for inp_file, out_dir in self.retrieve_files_corrected
+        }
+        self.files_retrieval_requested: set[str] = {
+            inp_file for inp_file, out_dir in self.retrieve_files_corrected
+        }
+        self.files_retrieval_reasonable: set[str] = set(
             slk_recall.files_cached_from_beginning
         )
         self.files_retrieval_failed: dict[str, str] = files_retrieval_failed
+        self.files_retrieval_succeeded: list[str] = list()
         self.file_permissions: int = file_permissions
         self.recall_timer: float = time.time()
 
-    def number_files_to_be_retrieved(self) -> int:
-        return len(self.retrieve_files_corrected)
+    def number_files_still_to_be_retrieved_in_total(self) -> int:
+        return len(self.files_retrieval_requested)
 
-    def number_files_to_be_realistically_retrieved(self) -> int:
-        return self.number_files_to_be_retrieved() - len(
+    def number_files_still_to_be_retrieved_realistically(self) -> int:
+        return self.number_files_still_to_be_retrieved_in_total() - len(
             [
                 file_path
-                for file_path in self.to_be_retrieved_files
+                for file_path in self.files_retrieval_reasonable
                 if self.slk_recall.recall_of_file_failed(file_path)
             ]
         )
@@ -955,22 +962,23 @@ class SLKRetrieval:
     def run_retrieval(self) -> None:
         logger.info("Retrieving files started")
         retrieve_counter: int = 0
-        for inp_file, out_dir in self.retrieve_files_corrected:
+        for inp_file in self.files_retrieval_requested:
+            if inp_file not in self.files_retrieval_reasonable:
+                continue
             # check if recalls need to be started before retrieving
             # check every 5 minutes whether additional recalls need to be started
             if time.time() - self.recall_timer > 300:
                 self.slk_recall.start_recalls()
                 self.recall_timer = time.time()
-            # append files which recall started to 'to_be_retrieved_files'
-            self.to_be_retrieved_files.update(
+            # append files which recall started to 'files_retrieval_reasonable'
+            self.files_retrieval_reasonable.update(
                 set(self.slk_recall.get_files_recall_newly_started())
             )
             # skip files which do not need to be retrieved anymore
             print(inp_file + "\n")
-            print(self.to_be_retrieved_files)
+            print(self.files_retrieval_reasonable)
             print("\n")
-            if inp_file not in self.to_be_retrieved_files:
-                continue
+            out_dir = self.files_retrieval_destination[inp_file]
             Path(out_dir).mkdir(parents=True, exist_ok=True, mode=self.file_permissions)
             # check if file should be retrieved or not
             output_dry_retrieve = pyslk.retrieve_improved(
@@ -995,7 +1003,7 @@ class SLKRetrieval:
             # check if file should be skipped
             if "SKIPPED" in output_dry_retrieve:
                 logger.debug(f"File {inp_file} does already exist in {out_dir}. Skip.")
-                self.to_be_retrieved_files.remove(inp_file)
+                self.files_retrieval_reasonable.remove(inp_file)
                 continue
             # check if file somehow cannot be retrieved
             if "FAILED" in output_dry_retrieve:
@@ -1006,7 +1014,7 @@ class SLKRetrieval:
                     logger.error(
                         f"File {inp_file} cannot be retrieved for unknown reasons. Ignore."
                     )
-                    self.to_be_retrieved_files.remove(inp_file)
+                    self.files_retrieval_reasonable.remove(inp_file)
                     self.files_retrieval_failed[inp_file] = next(
                         iter(output_dry_retrieve["FAILED"])
                     )
@@ -1030,7 +1038,7 @@ class SLKRetrieval:
                         logger.error(
                             f"File {inp_file} could not be retrieved for unknown reasons. Ignore."
                         )
-                        self.to_be_retrieved_files.remove(inp_file)
+                        self.files_retrieval_reasonable.remove(inp_file)
                         self.files_retrieval_failed[inp_file] = next(
                             iter(output_retrieve["FAILED"])
                         )
@@ -1040,7 +1048,7 @@ class SLKRetrieval:
                     logger.debug(
                         f"File {inp_file} was not retrieve because it does already exist in {out_dir}. Skip."
                     )
-                    self.to_be_retrieved_files.remove(inp_file)
+                    self.files_retrieval_reasonable.remove(inp_file)
                     continue
                 # check if file was successfully retrieved
                 if "SUCCESS" in output_retrieve:
@@ -1051,8 +1059,9 @@ class SLKRetrieval:
                     Path(
                         os.path.join(os.path.expanduser(out_dir), Path(inp_file).name)
                     ).chmod(self.file_permissions)
-                    self.to_be_retrieved_files.remove(inp_file)
+                    self.files_retrieval_reasonable.remove(inp_file)
                     retrieve_counter = retrieve_counter + 1
+                    self.files_retrieval_succeeded.append(str(inp_file))
                     continue
             logger.error(
                 f"Retrieval check for file {inp_file} yielded unexpected output. Ignore."
@@ -1060,10 +1069,12 @@ class SLKRetrieval:
             self.files_retrieval_failed[inp_file] = (
                 f"unexpected JSON output of pyslk.retrieve_improved: {json.dumps(output_dry_retrieve)}"
             )
-            self.to_be_retrieved_files.remove(inp_file)
+            self.files_retrieval_reasonable.remove(inp_file)
 
         if retrieve_counter == 0:
             logger.info("No files retrieved")
+        else:
+            logger.info(f"{retrieve_counter} files retrieved")
 
 
 def _write_file_lists(
@@ -1071,13 +1082,13 @@ def _write_file_lists(
 ) -> None:
     missing_files: list[str] = [
         file_path
-        for file_path in slk_retrieval.to_be_retrieved_files
+        for file_path in slk_retrieval.files_retrieval_reasonable
         if file_path not in slk_recall.files_recall_failed.keys()
         and file_path not in slk_retrieval.files_retrieval_failed.keys()
     ]
     tmp_str: str
     if (
-        len(slk_retrieval.to_be_retrieved_files) > 0
+        len(slk_retrieval.files_retrieval_reasonable) > 0
         or len(slk_recall.files_recall_failed.keys()) > 0
         or len(slk_retrieval.files_retrieval_failed.keys()) > 0
     ):

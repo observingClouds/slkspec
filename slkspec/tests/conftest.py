@@ -181,36 +181,36 @@ class SLKMock:
         "M23456M8": 234567,
         "M34567M8": 345678,
     }
-    job_stati: dict[int, list[StatusJob]] = {
-        123456: [
+    job_stati: dict[str, list[StatusJob]] = {
+        "123456": [
             StatusJob("PROCESSING"),
             StatusJob("PROCESSING"),
             StatusJob("SUCCESSFUL"),
         ],
-        234567: [
+        "234567": [
             StatusJob("QUEUED"),
             StatusJob("PROCESSING"),
             StatusJob("PROCESSING"),
             StatusJob("SUCCESSFUL"),
         ],
-        345678: [
+        "345678": [
             StatusJob("PROCESSING"),
             StatusJob("PROCESSING"),
             StatusJob("SUCCESSFUL"),
         ],
     }
     tape_files: dict[str, list[str]] = {
-        "M12345M8": list[
+        "M12345M8": [
             "/arch/ab1234/c567890/fileA.nc",
             "/arch/ab1234/c567890/fileB.nc",
             "/arch/ab1234/c567890/fileC.nc",
         ],
-        "M23456M8": list[
+        "M23456M8": [
             "/arch/ab1234/c567890/fileD.nc",
             "/arch/ab1234/c567890/fileE.nc",
             "/arch/ab1234/c567890/fileF.nc",
         ],
-        "M34567M8": list[
+        "M34567M8": [
             "/arch/ab1234/c567890/fileG.nc",
             "/arch/ab1234/c567890/fileH.nc",
             "/arch/ab1234/c567890/fileI.nc",
@@ -232,30 +232,28 @@ class SLKMock:
         self._cache = _cache
         self.resource_tape: dict[str, str] = dict()
         self.files_special: list[str] = list()
-        self.tape_ids: list[int] = list()
-        self.tape_id2barcode: dict[int, str] = list()
+        self.tape_special_ids: list[int] = list()
         for k, v in self.tape_files.items():
             for i in v:
                 self.resource_tape[i] = k
                 self.files_special.append(i)
         for k, v in self.tape_barcode2id.items():
-            self.tape_ids.append(v)
-            self.tape_id2barcode[v] = k
-        self.job_counters: dict[int, int] = dict()
-        self.job_active: dict[int, bool] = dict()
+            self.tape_special_ids.append(v)
+        self.job_counters: dict[str, int] = dict()
+        self.job_active: dict[str, bool] = dict()
         for k in self.job_counters.keys():
-            self.job_counters[k] = 0
-            self.job_active[k] = False
+            self.job_counters[str(k)] = 0
+            self.job_active[str(k)] = False
         # 80000000000 + resource_counter*1000
         self.resource_counter: int = 0
         # 400000 + job_counter
         self.job_counter: int = 0
         # 40000 + tape_counter
         self.tape_counter: int = 0
-        self.resource_id2path: dict[int, str] = dict()
+        self.resource_id2path: dict[str, str] = dict()
         self.resource_path2id: dict[str, int] = dict()
         for k, v in self.files_path2id.items():
-            self.resource_id2path[v] = k
+            self.resource_id2path[str(v)] = k
             self.resource_path2id[k] = v
 
     def slk_list(self, inp_path: str) -> str:
@@ -311,6 +309,18 @@ class SLKMock:
             columns=column_names,
         )
 
+    def is_cached(self, resource_path: Union[Path, str]) -> bool:
+        """Mock pyslk.is_cached."""
+        if not self._are_resources_special(resource_path):
+            return True
+        else:
+            tape_barcode: str = self.resource_tape[str(resource_path)]
+            job_id: int = self.tape_job_ids[tape_barcode]
+            if self.get_job_status(job_id).is_finished():
+                return True
+            else:
+                return False
+
     def group_files_by_tape(
         self,
         resource_path: Union[Path, str, list, None] = None,
@@ -323,32 +333,71 @@ class SLKMock:
         evaluate_regex_in_input: bool = False,
     ) -> list[dict]:
         """Mock slk_group_files_by_tape."""
-        result = []
-        if isinstance(resource_path, list):
-            for path in resource_path:
-                result.append(
-                    {
-                        "id": -1,
-                        "location": "tape",
-                        "barcode": "TEST_TAPE",
-                        "status": "AVAILABLE",
-                        "file_count": 1,
-                        "files": [path],
-                        "file_ids": [],
-                    }
-                )
+        if resource_path is None:
+            raise ValueError("'None' for 'resource_path' not implemented in mock")
         if isinstance(resource_path, (Path, str)):
-            result.append(
-                {
-                    "id": -1,
-                    "location": "tape",
-                    "barcode": "TEST_TAPE",
-                    "status": "AVAILABLE",
-                    "file_count": 1,
-                    "files": [path],
-                    "file_ids": [],
-                }
+            return self.group_files_by_tape(
+                resource_path=[resource_path],
+                resource_ids=resource_ids,
+                search_id=search_id,
+                search_query=search_query,
+                recursive=recursive,
+                max_tape_number_per_search=max_tape_number_per_search,
+                run_search_query=run_search_query,
+                evaluate_regex_in_input=evaluate_regex_in_input,
             )
+        # define output
+        tmp_result: dict[str, dict] = dict()
+        result: list[dict] = []
+        # iterate resources
+        for resource in resource_path:
+            # check if file is cached
+            if self.is_cached(resource):
+                # if 'cached' entry in tmp_results => append resource
+                # if not => create entry
+                if "cached" in tmp_result:
+                    tmp_result["cached"]["file_count"] = (
+                        tmp_result["cached"]["file_count"] + 1
+                    )
+                    tmp_result["cached"]["files"].append(resource)
+                    tmp_result["cached"]["file_ids"].append(
+                        self.get_resource_id(resource)
+                    )
+                else:
+                    tmp_result["cached"] = {
+                        "id": -1,
+                        "location": "cache",
+                        "description": "files currently stored in the HSM cache",
+                        "barcode": "",
+                        "status": "",
+                        "file_count": 1,
+                        "files": [resource],
+                        "file_ids": [self.get_resource_id(resource)],
+                    }
+            else:
+                # this resource is not cached but has to be retrieved from a tape
+                tape_barcode: str = self.resource_tape[str(resource)]
+                if tape_barcode in tmp_result:
+                    tmp_result[tape_barcode]["file_count"] = (
+                        tmp_result[tape_barcode]["file_count"] + 1
+                    )
+                    tmp_result[tape_barcode]["files"].append(resource)
+                    tmp_result[tape_barcode]["file_ids"].append(
+                        self.get_resource_id(resource)
+                    )
+                else:
+                    tmp_result[tape_barcode] = {
+                        "id": self.get_tape_id(tape_barcode),
+                        "location": "tape",
+                        "description": "files currently stored in tape",
+                        "barcode": tape_barcode,
+                        "status": "",
+                        "file_count": 1,
+                        "files": [resource],
+                        "file_ids": [self.get_resource_id(resource)],
+                    }
+        for v in tmp_result.values():
+            result.append(v)
 
         return result
 
@@ -359,8 +408,8 @@ class SLKMock:
             if tape in self.tape_barcode2id.keys():
                 special_barcode = tape
         elif isinstance(tape, int):
-            if tape in self.tape_ids:
-                special_barcode = self.tape_id2barcode[tape]
+            if tape in self.tape_special_ids:
+                special_barcode = self.get_tape_barcode[tape]
         if special_barcode is not None:
             job_id: int = self.tape_job_ids[special_barcode]
             # if job status indicates that the job is not finished,
@@ -371,19 +420,19 @@ class SLKMock:
         return "AVAILABLE"
 
     def _get_job_status(self, job_id: int) -> StatusJob | None:
-        if job_id in self.job_active and self.job_active[job_id]:
-            return self.job_stati[job_id][self.job_counters[job_id]]
+        if str(job_id) in self.job_active and self.job_active[str(job_id)]:
+            return self.job_stati[str(job_id)][self.job_counters[str(job_id)]]
         # default
         return self.StatusJob("SUCCESS")
 
     def get_job_status(self, job_id: int) -> StatusJob | None:
         tmp_job_status: self.StatusJob = self._get_job_status(job_id)
         # if job is active then increment the job status counter by one
-        if job_id in self.job_active and self.job_active[job_id]:
-            self.job_counters = self.job_counters + 1
+        if str(job_id) in self.job_active and self.job_active[str(job_id)]:
+            self.job_counter = self.job_counter + 1
             # set job to inactive when all stati were iterated
-            if self.job_counters >= len(self.job_stati[job_id]):
-                self.job_active[job_id] = False
+            if self.job_counter >= len(self.job_stati[str(job_id)]):
+                self.job_active[str(job_id)] = False
         # StatusJob(
         return tmp_job_status
 
@@ -474,20 +523,25 @@ class SLKMock:
         else:
             return self.tape_job_ids[self._get_tape_of_special_resources(resources)]
 
+    def get_tape_barcode(self, tape_id: int) -> str:
+        return f"M{tape_id/10}M8"
+
+    def get_tape_id(self, tape_barcode: str) -> int:
+        return int(tape_barcode[1:6]) * 10
+
     def get_resource_tape(self, resource_path: str | Path) -> dict[int, str] | None:
         if str(resource_path) in self.resource_tape:
             return self.resource_tape[str(resource_path)]
         else:
             # construct a tape
             tmp_tape_id: int = 40000 + self.tape_counter
-            tmp_tape_barcode: str = f"M{tmp_tape_id}M8"
-            self.tape_counter = self.tape_counter + 1
+            tmp_tape_barcode: str = self.get_tape_barcode(tmp_tape_id)
             self.resource_tape[str(resource_path)] = tmp_tape_barcode
             return {tmp_tape_id: tmp_tape_barcode}
 
     def get_resource_path(self, resource_id: int) -> Path | None:
-        if resource_id in self.resource_id2path:
-            return self.resource_id2path[resource_id]
+        if str(resource_id) in self.resource_id2path:
+            return self.resource_id2path[str(resource_id)]
         else:
             raise ValueError(f"Resource id {resource_id} not found")
 
@@ -499,7 +553,7 @@ class SLKMock:
             tmp_resource_id: int = 80000000000 + self.resource_counter * 1000
             self.resource_counter = self.resource_counter + 1
             self.resource_path2id[str(resource_path)] = tmp_resource_id
-            self.resource_id2path[tmp_resource_id] = resource_path
+            self.resource_id2path[str(tmp_resource_id)] = resource_path
             return tmp_resource_id
 
     def _resource_status(self, resource_path: Path | str) -> tuple[str, str]:
@@ -726,8 +780,8 @@ def zarr_file(
 ) -> Generator[Path, None, None]:
     """Save data with a blob to file."""
 
-    with Path(TemporaryDirectory()) as td:
-        out_file = td / "the_project" / "test1" / "precip" / "precip.zarr"
+    with TemporaryDirectory() as td:
+        out_file = Path(td) / "the_project" / "test1" / "precip" / "precip.zarr"
         out_file.parent.mkdir(exist_ok=True, parents=True)
         data.to_zarr(out_file)
-        yield td
+        yield Path(td)
