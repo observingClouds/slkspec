@@ -17,7 +17,7 @@ repos:
     rev: 25.1.0
     hooks:
       - id: black
-        args: ["--line-length=80", "-t py310"]
+        args: ["--line-length=80", "-tpy310"]
   - repo: https://github.com/pycqa/flake8
     rev: 7.1.2
     hooks:
