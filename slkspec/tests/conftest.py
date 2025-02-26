@@ -31,6 +31,8 @@ class SLKMock:
     """A mock that emulates what pyslk is doing."""
 
     class StatusJob:
+        """mock pyslk.StatusJob"""
+
         PAUSED, QUEUED, PROCESSING, COMPLETED, SUCCESSFUL, FAILED, ABORTED = (
             range(-4, 3)
         )
