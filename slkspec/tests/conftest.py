@@ -31,10 +31,10 @@ class SLKMock:
     """A mock that emulates what pyslk is doing."""
 
     class StatusJob:
-        """mock pyslk.StatusJob"""
+        """mock the pyslk.StatusJob"""
 
-        PAUSED, QUEUED, PROCESSING, COMPLETED, SUCCESSFUL, FAILED, ABORTED = (
-            range(-4, 3)
+        PAUSED, QUEUED, PROCESSING, COMPLETED, SUCCESSFUL, FAILED, ABORTED = range(
+            -4, 3
         )
         STATI = {}
 
@@ -445,9 +445,7 @@ class SLKMock:
                     output = tmp_tape
                 else:
                     if output != tmp_tape:
-                        raise ValueError(
-                            "All resources must be in the same tape"
-                        )
+                        raise ValueError("All resources must be in the same tape")
         return output
 
     def recall_single(
@@ -474,13 +472,9 @@ class SLKMock:
             self.job_counter = self.job_counter + 1
             return job_id
         else:
-            return self.tape_job_ids[
-                self._get_tape_of_special_resources(resources)
-            ]
+            return self.tape_job_ids[self._get_tape_of_special_resources(resources)]
 
-    def get_resource_tape(
-        self, resource_path: str | Path
-    ) -> dict[int, str] | None:
+    def get_resource_tape(self, resource_path: str | Path) -> dict[int, str] | None:
         if str(resource_path) in self.resource_tape:
             return self.resource_tape[str(resource_path)]
         else:
@@ -678,9 +672,9 @@ def create_data(variable_name: str, size: int) -> xr.Dataset:
         name=variable_name,
     )
     data_array = np.zeros(dims)
-    return xr.Dataset(
-        {variable_name: dset, "Lt": lon_vec, "Lg": lat_vec}
-    ).set_coords(list(coords.keys()))
+    return xr.Dataset({variable_name: dset, "Lt": lon_vec, "Lg": lat_vec}).set_coords(
+        list(coords.keys())
+    )
 
 
 @pytest.fixture(scope="session")
