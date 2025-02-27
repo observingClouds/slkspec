@@ -33,7 +33,7 @@ logger = logging.getLogger("slkspec")
 logger.setLevel(logging.INFO)
 
 MAX_RETRIES = 2
-MAX_PARALLEL_RECALLS = 1
+MAX_PARALLEL_RECALLS = 2
 MAX_RETRIES_RECALL = 3
 FileQueue: Queue[Tuple[str, str]] = Queue(maxsize=-1)
 FileInfo = TypedDict("FileInfo", {"name": str, "size": int, "type": str})
@@ -209,10 +209,7 @@ class SLKFile(io.IOBase):
             )
             # TODO: wrong output
             slk_retrieval.run_retrieval()
-            if (
-                len(slk_retrieval.files_retrieval_succeeded) == 0
-                and time.time() - retrieve_timer < 60
-            ):
+            if time.time() - retrieve_timer < 60:
                 logger.info(
                     f"Waiting for {int(60 - (time.time() - retrieve_timer))} seconds before next retrieval."
                 )
