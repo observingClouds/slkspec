@@ -212,7 +212,7 @@ class SLKFile(io.IOBase):
                 and time.time() - retrieve_timer < 60
             ):
                 logger.info(
-                    f"Waiting for {60 - (time.time() - retrieve_timer)} seconds before next retrieval."
+                    f"Waiting for {int(60 - (time.time() - retrieve_timer))} seconds before next retrieval."
                 )
                 time.sleep(60 - (time.time() - retrieve_timer))
 
@@ -976,9 +976,6 @@ class SLKRetrieval:
                 set(self.slk_recall.get_files_recall_newly_started())
             )
             # skip files which do not need to be retrieved anymore
-            print(inp_file + "\n")
-            print(self.files_retrieval_reasonable)
-            print("\n")
             out_dir = self.files_retrieval_destination[inp_file]
             Path(out_dir).mkdir(parents=True, exist_ok=True, mode=self.file_permissions)
             # check if file should be retrieved or not
@@ -1067,7 +1064,8 @@ class SLKRetrieval:
                     retrieve_counter = retrieve_counter + 1
                     continue
             logger.error(
-                f"Retrieval check for file {inp_file} yielded unexpected output. Ignore."
+                f"Retrieval check for file {inp_file} yielded unexpected output. "
+                + f"Ignore. Output: {output_dry_retrieve}"
             )
             self.files_retrieval_failed[inp_file] = (
                 f"unexpected JSON output of pyslk.retrieve_improved: {json.dumps(output_dry_retrieve)}"
@@ -1174,6 +1172,6 @@ def _reformat_retrieve_files_list(
                 # do not retrieve file because it exists already in destination and has
                 # same size and timestamp
                 continue
-        retrieve_files_corrected.append((inp_file, out_dir))
+        retrieve_files_corrected.append((str(inp_file), str(out_dir)))
 
     return retrieve_files_corrected

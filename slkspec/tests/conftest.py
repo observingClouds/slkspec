@@ -558,7 +558,7 @@ class SLKMock:
 
     def _resource_status(self, resource_path: Path | str) -> tuple[str, str]:
         if resource_path not in self.files_special:
-            return "SUCCESS", "SUCCESS"
+            return "ENVISAGED", "ENVISAGED"
         else:
             tape: str = self.resource_tape[str(resource_path)]
             job_id: int = self.tape_job_ids[tape]
@@ -613,11 +613,10 @@ class SLKMock:
             status1 = "SKIPPED"
             status2 = "SKIPPED_TARGET_EXISTS"
         # copy resource and change status
-        if not dry_run and status1 in ["SUCCESS", "ENVISAGED"]:
+        if not dry_run and status1 in ["ENVISAGED"]:
             shutil.copy(resource_path, outfile)
-            if status1 == "ENVISAGED":
-                status1 = "SUCCESS"
-                status2 = "SUCCESS"
+            status1 = "SUCCESS"
+            status2 = "SUCCESS"
         # return
         return status1, status2, str(resource_path), str(outfile), resource_id
 
