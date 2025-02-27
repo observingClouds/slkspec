@@ -33,7 +33,7 @@ logger = logging.getLogger("slkspec")
 logger.setLevel(logging.INFO)
 
 MAX_RETRIES = 2
-MAX_PARALLEL_RECALLS = 2
+MAX_PARALLEL_RECALLS = 3
 MAX_RETRIES_RECALL = 3
 FileQueue: Queue[Tuple[str, str]] = Queue(maxsize=-1)
 FileInfo = TypedDict("FileInfo", {"name": str, "size": int, "type": str})
@@ -165,7 +165,6 @@ class SLKFile(io.IOBase):
 
         Returns: None
         """
-        # TODO: work here!
         logger.debug("retrieval routine initializing")
         retrieve_files_corrected: list[tuple[str, str]] = _reformat_retrieve_files_list(
             retrieve_files=retrieve_files,
@@ -207,9 +206,11 @@ class SLKFile(io.IOBase):
                 slk_recall.number_active_jobs(),
                 slk_recall.number_files_in_active_jobs(),
             )
-            # TODO: wrong output
             slk_retrieval.run_retrieval()
-            if time.time() - retrieve_timer < 60:
+            if (
+                len(slk_retrieval.files_retrieval_reasonable) > 0
+                and time.time() - retrieve_timer < 60
+            ):
                 logger.info(
                     f"Waiting for {int(60 - (time.time() - retrieve_timer))} seconds before next retrieval."
                 )
@@ -929,7 +930,6 @@ class SLKRetrieval:
     ) -> None:
         self.slk_recall: SLKRecall = slk_recall
         self.retrieve_files_corrected: list[tuple[str, str]] = retrieve_files_corrected
-        # TODO: retrieve only files which are in the cache or are currently being recalled
         # self.files_retrieval_reasonable: set[str] = set(
         #     [inp_file for inp_file, out_dir in self.retrieve_files_corrected]
         # )
