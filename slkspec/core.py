@@ -962,6 +962,7 @@ class SLKRetrieval:
     def run_retrieval(self) -> None:
         logger.info("Retrieving files started")
         retrieve_counter: int = 0
+        files_retrieval_done: set = set()
         for inp_file in self.files_retrieval_requested:
             if inp_file not in self.files_retrieval_reasonable:
                 continue
@@ -1004,6 +1005,7 @@ class SLKRetrieval:
             if "SKIPPED" in output_dry_retrieve:
                 logger.debug(f"File {inp_file} does already exist in {out_dir}. Skip.")
                 self.files_retrieval_reasonable.remove(inp_file)
+                files_retrieval_done.add(inp_file)
                 continue
             # check if file somehow cannot be retrieved
             if "FAILED" in output_dry_retrieve:
@@ -1049,6 +1051,7 @@ class SLKRetrieval:
                         f"File {inp_file} was not retrieve because it does already exist in {out_dir}. Skip."
                     )
                     self.files_retrieval_reasonable.remove(inp_file)
+                    files_retrieval_done.add(inp_file)
                     continue
                 # check if file was successfully retrieved
                 if "SUCCESS" in output_retrieve:
@@ -1060,8 +1063,8 @@ class SLKRetrieval:
                         os.path.join(os.path.expanduser(out_dir), Path(inp_file).name)
                     ).chmod(self.file_permissions)
                     self.files_retrieval_reasonable.remove(inp_file)
+                    files_retrieval_done.add(inp_file)
                     retrieve_counter = retrieve_counter + 1
-                    self.files_retrieval_succeeded.append(str(inp_file))
                     continue
             logger.error(
                 f"Retrieval check for file {inp_file} yielded unexpected output. Ignore."
@@ -1070,6 +1073,10 @@ class SLKRetrieval:
                 f"unexpected JSON output of pyslk.retrieve_improved: {json.dumps(output_dry_retrieve)}"
             )
             self.files_retrieval_reasonable.remove(inp_file)
+
+        for inp_file in files_retrieval_done:
+            self.files_retrieval_requested.remove(inp_file)
+            self.files_retrieval_succeeded.append(str(inp_file))
 
         if retrieve_counter == 0:
             logger.info("No files retrieved")
