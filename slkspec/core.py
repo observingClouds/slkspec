@@ -199,8 +199,10 @@ class SLKFile(io.IOBase):
             iterations += 1
             retrieve_timer = time.time()
             logger.info(
-                "retrieve/recall iteration %i; %i files to be retrieved. %i recall jobs running for %i files.",
+                "retrieve/recall iteration %i; %i files missing (%i failed). Currently, trying %i files. %i recall jobs running for %i files.",
                 iterations,
+                len(slk_retrieval.files_retrieval_requested),
+                len(slk_retrieval.files_retrieval_failed),
                 len(slk_retrieval.files_retrieval_reasonable),
                 slk_recall.number_active_jobs(),
                 slk_recall.number_files_in_active_jobs(),
@@ -579,6 +581,7 @@ class SLKRecall:
                     "Checking status of job %i (tape: %s)", job_id, tape_barcode
                 )
                 job_status = pyslk.get_job_status(job_id)
+                logger.debug("Job status: %s", job_status.get_status_name())
                 # DIFFERENT JOB STATES
                 if job_status.is_successful():
                     # SUCCESS => mark tape as successful; remember job id to be considered as free;
