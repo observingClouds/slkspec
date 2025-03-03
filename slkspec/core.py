@@ -219,6 +219,16 @@ class SLKFile(io.IOBase):
         # print files which are not available
         _write_file_lists(slk_recall, slk_retrieval, self.slk_cache)
 
+        # throw error if not all files were retrieved
+        if slk_retrieval.number_files_still_to_be_retrieved_in_total() != len(
+            slk_retrieval.files_retrieval_succeeded
+        ):
+            raise pyslk.PySlkException(
+                f"Only {len(slk_retrieval.files_retrieval_succeeded)} of "
+                + f"{slk_retrieval.number_files_still_to_be_retrieved_in_total()} requested files could be retrieve. "
+                + "Check previous error messages for affected files."
+            )
+
     def _cache_files(self) -> None:
         time.sleep(self.delay)
         with self._lock:
