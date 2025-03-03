@@ -954,7 +954,7 @@ class SLKRetrieval:
         return self.number_files_still_to_be_retrieved_in_total() - len(
             [
                 file_path
-                for file_path in self.files_retrieval_reasonable
+                for file_path in self.files_retrieval_requested
                 if self.slk_recall.recall_of_file_failed(file_path)
             ]
         )
