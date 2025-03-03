@@ -220,12 +220,15 @@ class SLKFile(io.IOBase):
         _write_file_lists(slk_recall, slk_retrieval, self.slk_cache)
 
         # throw error if not all files were retrieved
-        if len(slk_retrieval.retrieve_files_corrected) != len(
-            slk_retrieval.files_retrieval_succeeded
+        if (
+            len(slk_retrieval.files_retrieval_failed)
+            + len(slk_recall.files_recall_failed)
+            > 0
         ):
             raise pyslk.PySlkException(
-                f"Only {len(slk_retrieval.files_retrieval_succeeded)} of {len(slk_retrieval.retrieve_files_corrected)} "
-                + "requested files could be retrieve. Check previous error messages for affected files."
+                f"{len(slk_retrieval.files_retrieval_failed) + len(slk_recall.files_recall_failed)} of requested"
+                + f"{len(slk_retrieval.retrieve_files_corrected)} files could not be retrieved. Please check previous "
+                + "error messages for affected files."
             )
 
     def _cache_files(self) -> None:
