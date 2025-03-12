@@ -198,12 +198,18 @@ class SLKFile(io.IOBase):
             retrieve_timer = time.time()
             logger.info(
                 (
-                    "retrieve/recall iteration %i; %i files missing (%i failed). "
-                    + "Currently, trying %i files. %i recall jobs running for %i files."
+                    "retrieve/recall iteration %i; %i requested files missing (of "
+                    + "which %i failed) => %i realistically to be retrieved. "
+                    + "Currently, trying %i files. %i recall jobs running "
+                    + "for %i files."
                 ),
                 iterations,
                 len(slk_retrieval.files_retrieval_requested),
                 len(slk_retrieval.files_retrieval_failed),
+                (
+                    len(slk_retrieval.files_retrieval_requested)
+                    - len(slk_retrieval.files_retrieval_failed)
+                ),
                 len(slk_retrieval.files_retrieval_reasonable),
                 slk_recall.number_active_jobs(),
                 slk_recall.number_files_in_active_jobs(),
@@ -1004,11 +1010,14 @@ class SLKRetrieval:
         return len(self.files_retrieval_requested)
 
     def number_files_still_to_be_retrieved_realistically(self) -> int:
-        return self.number_files_still_to_be_retrieved_in_total() - len(
+        return len(
             [
                 file_path
                 for file_path in self.files_retrieval_requested
-                if self.slk_recall.recall_of_file_failed(file_path)
+                if not (
+                    self.slk_recall.recall_of_file_failed(file_path)
+                    or file_path in self.files_retrieval_failed
+                )
             ]
         )
 
@@ -1104,7 +1113,7 @@ class SLKRetrieval:
             }
         }
         """
-        if "ENVISAGED" not in output_retrieve:
+        if "ENVISAGED" in output_retrieve:
             # we can try to retrieve the file
             # message on which file is retrieved to where
             logger.debug(f"Retrieving file {inp_file} to {out_dir}")
