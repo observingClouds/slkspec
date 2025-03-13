@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.3
+- adapted to ``pyslk`` version >= 2.0.0
+- improved and parallelized retrieval workflow
+- dependency on ``pyslk`` available via PyPI (and not DKRZ GitLab Repo)
+
 ## v0.0.2
 - Add CHANGELOG [#50](https://github.com/observingClouds/slkspec/pull/50)
 - Modernize packaging with pyproject.toml [#49](https://github.com/observingClouds/slkspec/pull/49)
