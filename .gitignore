@@ -30,3 +30,7 @@ MANIFEST
 .coverage
 coverage.xml
 report.xml
+
+# IDEs
+.idea
+
