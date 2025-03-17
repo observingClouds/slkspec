@@ -253,7 +253,7 @@ class SLKFile(io.IOBase):
                     items.append(self._file_queue.get())
                     self._file_queue.task_done()
                 try:
-                    self._retrieve_items(items)
+                    self._retrieve_items(list(set(items)))
                 except Exception as error:
                     _ = [
                         self._file_queue.get() for _ in range(self._file_queue.qsize())
