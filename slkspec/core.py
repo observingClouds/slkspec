@@ -216,7 +216,7 @@ class SLKFile(io.IOBase):
             )
             slk_retrieval.run_retrieval()
             if (
-                len(slk_retrieval.files_retrieval_reasonable) > 0
+                slk_retrieval.number_files_still_to_be_retrieved_realistically() > 0
                 and time.time() - retrieve_timer < 60
             ):
                 logger.info(
@@ -494,10 +494,10 @@ class SLKRecall:
         # list of files which recalls failed
         self.files_recall_failed: dict[str, str] = dict()
         # list of files for which recall started
-        self.files_recall_started: list[str] = list()
-        self._files_recall_newly_started: list[str] = list()
+        self.files_recall_started: set[str] = set()
+        self._files_recall_newly_started: set[str] = set()
         # list of files which were cached from the beginning
-        self.files_cached_from_beginning: list[str] = list()
+        self.files_cached_from_beginning: set[str] = set()
         # mapping from tape to file list
         self.tape_file_mapping: dict[str, list[int]] = defaultdict(list)
         # initialize file-tape-grouping
@@ -534,9 +534,9 @@ class SLKRecall:
                 tape_group.get("id", 0) == -1
                 and tape_group.get("location", "") == "cache"
             ):
-                self.files_cached_from_beginning = [
+                self.files_cached_from_beginning = {
                     str(file_path) for file_path in tape_group["files"]
-                ]
+                }
         self.all_multi_tape_files_done = len(self.file_ids_multiple_tapes) == 0
         self.grouping_initialized = True
 
@@ -661,8 +661,8 @@ class SLKRecall:
     def _mark_file_as_recall_running(self, file_id: int) -> None:
         # append list of files which recall started to respective lists
         file_name_tmp: str = str(pyslk.get_resource_path(file_id))
-        self.files_recall_started.append(file_name_tmp)
-        self._files_recall_newly_started.append(file_name_tmp)
+        self.files_recall_started.add(file_name_tmp)
+        self._files_recall_newly_started.add(file_name_tmp)
 
     def _check_normal_recall_jobs(self) -> None:
         job_ids_to_be_removed: set[int] = set()
@@ -1027,9 +1027,9 @@ class SLKRecall:
             ]
         ) + len(self.job_multi_tape_file_mapping)
 
-    def get_files_recall_newly_started(self) -> list[str]:
-        output: list[str] = self._files_recall_newly_started
-        self._files_recall_newly_started = list()
+    def get_files_recall_newly_started(self) -> set[str]:
+        output: set[str] = self._files_recall_newly_started
+        self._files_recall_newly_started = set()
         return output
 
 
@@ -1053,11 +1053,11 @@ class SLKRetrieval:
         self.files_retrieval_requested: set[str] = {
             inp_file for inp_file, out_dir in self.retrieve_files_corrected
         }
-        self.files_retrieval_reasonable: set[str] = set(
+        self.files_retrieval_reasonable: set[str] = (
             slk_recall.files_cached_from_beginning
         )
         self.files_retrieval_failed: dict[str, str] = files_retrieval_failed
-        self.files_retrieval_succeeded: list[str] = list()
+        self.files_retrieval_succeeded: set[str] = set()
         self.file_permissions: int = file_permissions
         self.recall_timer: float = time.time()
 
@@ -1082,16 +1082,16 @@ class SLKRetrieval:
         files_retrieval_done: set = set()
         inp_file: str
         for inp_file in self.files_retrieval_requested:
+            # check if recalls need to be started before retrieving
+            # check every 5 minutes whether additional recalls need to be started
+            if time.time() - self.recall_timer > 300:
+                self.slk_recall.start_recalls()
+                self.recall_timer = time.time()
+            # append files which recall started to 'files_retrieval_reasonable'
+            self.files_retrieval_reasonable.update(
+                self.slk_recall.get_files_recall_newly_started()
+            )
             if inp_file in self.files_retrieval_reasonable:
-                # check if recalls need to be started before retrieving
-                # check every 5 minutes whether additional recalls need to be started
-                if time.time() - self.recall_timer > 300:
-                    self.slk_recall.start_recalls()
-                    self.recall_timer = time.time()
-                # append files which recall started to 'files_retrieval_reasonable'
-                self.files_retrieval_reasonable.update(
-                    set(self.slk_recall.get_files_recall_newly_started())
-                )
                 # skip files which do not need to be retrieved anymore
                 out_dir: str = self.files_retrieval_destination[inp_file]
                 Path(out_dir).mkdir(
@@ -1110,7 +1110,7 @@ class SLKRetrieval:
                 )
         for inp_file in files_retrieval_done:
             self.files_retrieval_requested.remove(inp_file)
-            self.files_retrieval_succeeded.append(str(inp_file))
+            self.files_retrieval_succeeded.add(str(inp_file))
 
         if retrieve_counter == 0:
             logger.info("No files retrieved")
