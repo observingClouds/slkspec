@@ -155,17 +155,17 @@ class SLKFile(io.IOBase):
             return self._file
         return self._url
 
-    def _retrieve_items(self, retrieve_files: list[tuple[str, str]]) -> None:
+    def _retrieve_items(self, retrieve_files: set[tuple[str, str]]) -> None:
         """Get items from the tape archive.
         Retrieves items using given list of files and performs necessary operations.
 
         Parameters:
-        - retrieve_files: a list of tuples containing file source and destination
+        - retrieve_files: a set of tuples containing file source and destination
 
         Returns: None
         """
         logger.debug("retrieval routine initializing")
-        retrieve_files_corrected: list[tuple[str, str]] = _reformat_retrieve_files_list(
+        retrieve_files_corrected: set[tuple[str, str]] = _reformat_retrieve_files_list(
             retrieve_files=retrieve_files,
             dir_permissions=self.dir_permissions,
         )
@@ -246,11 +246,11 @@ class SLKFile(io.IOBase):
     def _cache_files(self) -> None:
         time.sleep(self.delay)
         with self._lock:
-            items = []
+            items: set = set()
             if self._file_queue.qsize() > 0:
                 self._file_queue.put(("finish", "finish"))
                 for _ in range(self._file_queue.qsize() - 1):
-                    items.append(self._file_queue.get())
+                    items.add(self._file_queue.get())
                     self._file_queue.task_done()
                 try:
                     self._retrieve_items(items)
@@ -469,7 +469,7 @@ class SLKFileSystem(AbstractFileSystem):
 
 class SLKRecall:
 
-    def __init__(self, retrieve_files_corrected: list[tuple[str, str]]):
+    def __init__(self, retrieve_files_corrected: set[tuple[str, str]]):
         # some internal control variables
         self.grouping_initialized = False
         # tape_job_mapping: {"<tape_barcode>": [<job_id_1>, <job_id_2>, ...]}
@@ -504,7 +504,7 @@ class SLKRecall:
         self._initialize_grouping(retrieve_files_corrected)
 
     def _initialize_grouping(
-        self, retrieve_files_corrected: list[tuple[str, str]]
+        self, retrieve_files_corrected: set[tuple[str, str]]
     ) -> None:
         # tape grouping
         file_tape_grouping: list[TapeGroup] = pyslk.group_files_by_tape(
@@ -657,6 +657,12 @@ class SLKRecall:
             self._start_split_files_recall_jobs(multi_tape_files_available)
 
         logger.debug("Recall function ended")
+
+    def _mark_file_as_recall_running(self, file_id: int) -> None:
+        # append list of files which recall started to respective lists
+        file_name_tmp: str = str(pyslk.get_resource_path(file_id))
+        self.files_recall_started.append(file_name_tmp)
+        self._files_recall_newly_started.append(file_name_tmp)
 
     def _check_normal_recall_jobs(self) -> None:
         job_ids_to_be_removed: set[int] = set()
@@ -811,9 +817,77 @@ class SLKRecall:
         for job_id_to_be_removed in job_ids_to_be_removed:
             del self.job_multi_tape_file_mapping[job_id_to_be_removed]
 
-    def _start_normal_recall_jobs(self, tapes_available: list) -> None:
+    def _recall_tape_not_needed(self, tape: str, file_ids: list[int]) -> None:
+        logger.debug(
+            "Wanted to recall files from tape %s but files are already in "
+            + "the cache.",
+            tape,
+        )
+        self.tapes_success.add(tape)
+        # append list of files which recall started to respective lists
+        for file_id in file_ids:
+            self._mark_file_as_recall_running(file_id)
+
+    def _start_normal_recall_job(self, tape: str) -> None:
         job_id: int
         msg: str
+        # get file ids
+        file_ids = self.tape_file_mapping[tape]
+        if not pyslk.is_recall_needed(file_ids, resource_ids=True):
+            self._recall_tape_not_needed(tape, file_ids)
+            return
+        logger.debug("Considering tape %s for next recall.", tape)
+        # go through tape list and start new recalls
+        tape_status = pyslk.get_tape_status(tape)
+        logger.debug("Tape %s status: %s", tape, tape_status)
+        if tape_status == "BLOCKED":
+            # do nothing
+            msg = f"Tape {tape} is blocked. Skip it until next time."
+            logger.debug(msg)
+        elif tape_status == "FAILED":
+            msg = (
+                f"Tape {tape} is in failed state. Do not proceed getting "
+                + "data from this tape."
+            )
+            logger.error(msg)
+            self.tapes_failed[tape] = msg
+            # get file ids
+            for file_id in file_ids:
+                self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
+        elif tape_status == "AVAILABLE":
+            # start new job
+            msg = f"Tape {tape} is available. Starting recall from tape."
+            logger.debug(msg)
+            try:
+                # really start new job here
+                job_id = pyslk.recall_single(file_ids, resource_ids=True)
+            except pyslk.PySlkNothingToRecallError:
+                self._recall_tape_not_needed(tape, file_ids)
+                return
+            logger.info(f"Recall job started for tape {tape}: {str(job_id)}")
+            # bijective job id <-> tape
+            self.job_tape_mapping[job_id] = tape
+            # tape -> multiple job ids
+            self.tape_job_mapping[tape].append(job_id)
+            # just the active tapes
+            self.tapes_active.add(tape)
+            # append list of files which recall started to respective lists
+            for file_id in file_ids:
+                self._mark_file_as_recall_running(file_id)
+        else:
+            # unexpected state; log warning message; but do nothing else
+            msg = (
+                f"Tape {tape} has unexpected state: {tape_status}. Do not "
+                + "proceed with this tape."
+            )
+            logger.error(msg)
+            self.tapes_failed[tape] = msg
+            # get file ids
+            file_ids = self.tape_file_mapping[tape]
+            for file_id in file_ids:
+                self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
+
+    def _start_normal_recall_jobs(self, tapes_available: list[str]) -> None:
         # iterate over all tapes until
         #  (a) all tapes were iterated or
         #  (b) the maximum number of parallel recalls has been reached
@@ -827,64 +901,105 @@ class SLKRecall:
                     + "parallel recalls has been reached."
                 )
                 break
-            logger.debug("Considering tape %s for next recall.", tape)
+
+            self._start_normal_recall_job(tape)
+
+    def _recall_split_files_not_needed(self, file_id: int) -> None:
+        logger.debug(
+            "Wanted to recall split file %i from tapes but file is already in "
+            + "the cache.",
+            file_id,
+        )
+        self.multi_tape_files_success.add(file_id)
+        self._mark_file_as_recall_running(file_id)
+
+    def _check_tapes_of_split_file_available(
+        self, file_id: int, tmp_tapes: list[str]
+    ) -> list[bool]:
+        tmp_tapes_available: List[bool]
+        msg: str
+        for tape in tmp_tapes:
             # go through tape list and start new recalls
             tape_status = pyslk.get_tape_status(tape)
-            logger.debug("Tape %s status: %s", tape, tape_status)
             if tape_status == "BLOCKED":
                 # do nothing
-                msg = f"Tape {tape} is blocked. Skip it until next time."
+                msg = (
+                    f"Tape {tape} is blocked (file {file_id}). Skip split "
+                    + "file until next time."
+                )
                 logger.debug(msg)
+                tmp_tapes_available.append(False)
             elif tape_status == "FAILED":
                 msg = (
-                    f"Tape {tape} is in failed state. Do not proceed getting "
-                    + "data from this tape."
+                    f"Tape {tape} is in failed state (file {file_id}). Do not "
+                    + "proceed getting split file."
                 )
                 logger.error(msg)
-                self.tapes_failed[tape] = msg
-                # get file ids
-                file_ids = self.tape_file_mapping[tape]
-                for file_id in file_ids:
-                    self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
+                self.multi_tape_files_failed[file_id] = msg
+                self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
+                tmp_tapes_available.append(False)
             elif tape_status == "AVAILABLE":
                 # start new job
-                msg = f"Tape {tape} is available. Starting recall from tape."
+                msg = f"Tape {tape} is available (file {file_id})."
                 logger.debug(msg)
-                # get file ids
-                file_ids = self.tape_file_mapping[tape]
-                # really start new job here
-                job_id = pyslk.recall_single(file_ids, resource_ids=True)
-                logger.info(f"Recall job started for tape {tape}: {str(job_id)}")
-                # bijective job id <-> tape
-                self.job_tape_mapping[job_id] = tape
-                # tape -> multiple job ids
-                self.tape_job_mapping[tape].append(job_id)
-                # just the active tapes
-                self.tapes_active.add(tape)
-                # append list of files which recall started to respective lists
-                for file_id in file_ids:
-                    file_name_tmp: str = str(pyslk.get_resource_path(file_id))
-                    self.files_recall_started.append(file_name_tmp)
-                    self._files_recall_newly_started.append(file_name_tmp)
+                tmp_tapes_available.append(True)
             else:
                 # unexpected state; log warning message; but do nothing else
                 msg = (
-                    f"Tape {tape} has unexpected state: {tape_status}. Do not "
-                    + "proceed with this tape."
+                    f"Tape {tape} has unexpected state (file {file_id}): "
+                    + f"{tape_status}. Do not proceed with this tape."
                 )
                 logger.error(msg)
-                self.tapes_failed[tape] = msg
-                # get file ids
-                file_ids = self.tape_file_mapping[tape]
-                for file_id in file_ids:
-                    self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
+                self.multi_tape_files_failed[file_id] = msg
+                self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
+                tmp_tapes_available.append(False)
+        return tmp_tapes_available
+
+    def _start_split_files_recall_job(self, file_id: int) -> None:
+        job_id: int
+        msg: str
+        tmp_tapes: List[str]
+        if not pyslk.is_recall_needed(file_id, resource_ids=True):
+            self._recall_split_files_not_needed(file_id)
+            return
+        logger.debug("Considering file %i for next recall.", file_id)
+        # TEST file:
+        #  /arch/pd1309/forcings/reanalyses/ERA5/year2009/ERA5_2009_09_part5.tar
+        tmp_tapes = list()
+        for tape_id, tape_barcode in pyslk.get_resource_tape(
+            pyslk.get_resource_path(file_id)
+        ).items():
+            tmp_tapes.append(tape_barcode)
+        if len(tmp_tapes) < 2:
+            msg = (
+                f"File {file_id} is in list of split files but it seems to be "
+                + f"stored on {len(tmp_tapes)} tape."
+            )
+            logger.error(msg)
+            raise pyslk.PySlkException(msg)
+        logger.debug(f"File {file_id} on tapes: {', '.join(tmp_tapes)}")
+        tmp_tapes_available: List[bool] = self._check_tapes_of_split_file_available(
+            file_id, tmp_tapes
+        )
+
+        if all(tmp_tapes_available):
+            try:
+                # really start new job here
+                job_id = pyslk.recall_single(file_id, resource_ids=True)
+            except pyslk.PySlkNothingToRecallError:
+                self._recall_split_files_not_needed(file_id)
+                return
+            # bijective job id <-> tape
+            self.job_multi_tape_file_mapping[job_id] = file_id
+            # tape -> multiple job ids
+            self.multi_tape_file_job_mapping[file_id].append(job_id)
+            # just the active tapes
+            self.multi_tape_files_active.add(file_id)
+            # mark file which recall started
+            self._mark_file_as_recall_running(file_id)
 
     def _start_split_files_recall_jobs(self, multi_tape_files_available: list) -> None:
-        job_id: int
         file_id: int
-        msg: str
-        tmp_tapes_available: List[bool]
-        tmp_tapes: List[str]
         # for loop over file ids
         for file_id in multi_tape_files_available:
             if (
@@ -896,67 +1011,7 @@ class SLKRecall:
                     + "parallel recalls has been reached."
                 )
                 break
-            logger.debug("Considering file %i for next recall.", file_id)
-            # TEST file:
-            #  /arch/pd1309/forcings/reanalyses/ERA5/year2009/ERA5_2009_09_part5.tar
-            tmp_tapes = list()
-            tmp_tapes_available = list()
-            for tape_id, tape_barcode in pyslk.get_resource_tape(
-                pyslk.get_resource_path(file_id)
-            ).items():
-                tmp_tapes.append(tape_barcode)
-            if len(tmp_tapes) < 2:
-                msg = (
-                    f"File {file_id} is in list of split files but it seems to be "
-                    + f"stored on {len(tmp_tapes)} tape."
-                )
-                logger.error(msg)
-                raise pyslk.PySlkException(msg)
-            logger.debug(f"File {file_id} on tapes: {', '.join(tmp_tapes)}")
-            for tape in tmp_tapes:
-                # go through tape list and start new recalls
-                tape_status = pyslk.get_tape_status(tape)
-                if tape_status == "BLOCKED":
-                    # do nothing
-                    msg = (
-                        f"Tape {tape} is blocked (file {file_id}). Skip split "
-                        + "file until next time."
-                    )
-                    logger.debug(msg)
-                    tmp_tapes_available.append(False)
-                elif tape_status == "FAILED":
-                    msg = (
-                        f"Tape {tape} is in failed state (file {file_id}). Do not "
-                        + "proceed getting split file."
-                    )
-                    logger.error(msg)
-                    self.multi_tape_files_failed[file_id] = msg
-                    self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
-                    tmp_tapes_available.append(False)
-                elif tape_status == "AVAILABLE":
-                    # start new job
-                    msg = f"Tape {tape} is available (file {file_id})."
-                    logger.debug(msg)
-                    tmp_tapes_available.append(True)
-                else:
-                    # unexpected state; log warning message; but do nothing else
-                    msg = (
-                        f"Tape {tape} has unexpected state (file {file_id}): "
-                        + f"{tape_status}. Do not proceed with this tape."
-                    )
-                    logger.error(msg)
-                    self.multi_tape_files_failed[file_id] = msg
-                    self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
-                    tmp_tapes_available.append(False)
-            if all(tmp_tapes_available):
-                # really start new job here
-                job_id = pyslk.recall_single(file_id, resource_ids=True)
-                # bijective job id <-> tape
-                self.job_multi_tape_file_mapping[job_id] = file_id
-                # tape -> multiple job ids
-                self.multi_tape_file_job_mapping[file_id].append(job_id)
-                # just the active tapes
-                self.multi_tape_files_active.add(file_id)
+            self._start_split_files_recall_job(file_id)
 
     def recall_of_file_failed(self, file_path: str) -> bool:
         return file_path in self.files_recall_failed.keys()
@@ -983,12 +1038,12 @@ class SLKRetrieval:
     def __init__(
         self,
         slk_recall: SLKRecall,
-        retrieve_files_corrected: list[tuple[str, str]],
+        retrieve_files_corrected: set[tuple[str, str]],
         files_retrieval_failed: dict[str, str],
         file_permissions: int,
     ) -> None:
         self.slk_recall: SLKRecall = slk_recall
-        self.retrieve_files_corrected: list[tuple[str, str]] = retrieve_files_corrected
+        self.retrieve_files_corrected: set[tuple[str, str]] = retrieve_files_corrected
         # self.files_retrieval_reasonable: set[str] = set(
         #     [inp_file for inp_file, out_dir in self.retrieve_files_corrected]
         # )
@@ -1237,9 +1292,9 @@ def _mkdirs(path: Union[str, Path], dir_permissions: int) -> None:
 
 
 def _reformat_retrieve_files_list(
-    retrieve_files: list[tuple[str, str]], dir_permissions: int
-) -> list[tuple[str, str]]:
-    retrieve_files_corrected: list[tuple[str, str]] = list()
+    retrieve_files: set[tuple[str, str]], dir_permissions: int
+) -> set[tuple[str, str]]:
+    retrieve_files_corrected: set[tuple[str, str]] = set()
     for inp_file, out_dir in retrieve_files:
         _mkdirs(out_dir, dir_permissions)
         # this `mkdir` indirectly sets proper access permissions for this folder
@@ -1257,6 +1312,6 @@ def _reformat_retrieve_files_list(
                 # do not retrieve file because it exists already in destination and has
                 # same size and timestamp
                 continue
-        retrieve_files_corrected.append((str(inp_file), str(out_dir)))
+        retrieve_files_corrected.add((str(inp_file), str(out_dir)))
 
     return retrieve_files_corrected

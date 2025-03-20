@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.0.4
+- incremented dependency on ``pyslk`` to ``2.3.0`` => improved workflows + new required functions
+- internal ``list`` of files needed to be retrieved was changed to type ``set`` => remove duplicate files
+- consider case when files are copied to the cache by another process while they are queued for being recalled from tape to cache by this instance of slkspec
+- split recall and retrieval code into more sub-functions for clearer code structure
+
 ## v0.0.3
 - adapted to ``pyslk`` version >= 2.0.0
 - improved and parallelized retrieval workflow
