@@ -173,9 +173,8 @@ class SLKFile(io.IOBase):
         files_retrieval_failed: dict[str, str] = dict()
         # start
         logger.debug(
-            "Retrieving %i items from tape (%i already available)",
+            "Planning to retrieve %i items from cache/tape",
             len(retrieve_files_corrected),
-            len(retrieve_files) - len(retrieve_files_corrected),
         )
         # instantiate recall and retrieval classes
         slk_recall: SLKRecall = SLKRecall(retrieve_files_corrected)
