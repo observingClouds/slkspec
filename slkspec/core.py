@@ -1101,7 +1101,7 @@ class SLKRetrieval:
                 output_dry_retrieve = pyslk.retrieve_improved(
                     inp_file, out_dir, dry_run=True, preserve_path=False
                 )
-                self._eval_output_dry_retrieval(
+                retrieve_counter = self._eval_output_dry_retrieval(
                     output_dry_retrieve,
                     inp_file,
                     out_dir,
@@ -1112,10 +1112,10 @@ class SLKRetrieval:
             self.files_retrieval_requested.remove(inp_file)
             self.files_retrieval_succeeded.add(str(inp_file))
 
-        if retrieve_counter == 0:
+        if len(self.files_retrieval_succeeded) == 0:
             logger.info("No files retrieved")
         else:
-            logger.info(f"{retrieve_counter} files retrieved")
+            logger.info(f"{len(self.files_retrieval_succeeded)} files retrieved")
 
     def _eval_output_dry_retrieval(
         self,
@@ -1124,7 +1124,7 @@ class SLKRetrieval:
         out_dir: str,
         retrieve_counter: int,
         files_retrieval_done: set,
-    ) -> None:
+    ) -> int:
         # example output of pyslk.retrieve_improved:
         """
         {
@@ -1188,7 +1188,7 @@ class SLKRetrieval:
                 self.files_retrieval_reasonable.remove(inp_file)
                 files_retrieval_done.add(inp_file)
                 retrieve_counter = retrieve_counter + 1
-                return
+                return retrieve_counter
 
         # check if file should be skipped
         if "SKIPPED" in output_retrieve:
@@ -1218,6 +1218,7 @@ class SLKRetrieval:
                 + f"{json.dumps(output_retrieve)}"
             )
             self.files_retrieval_reasonable.remove(inp_file)
+        return retrieve_counter
 
 
 def _write_file_lists(
