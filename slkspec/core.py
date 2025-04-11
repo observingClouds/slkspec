@@ -440,6 +440,29 @@ class SLKFileSystem(AbstractFileSystem):
         if detail:
             return detail_list
         return filelist.filename.tolist()
+    
+    def cat_file(self, path, start=None, end=None):
+        """Get file content
+
+        Inputs
+        ------
+        path : str
+          file to open
+        start : int
+          seek position within file, optional
+        end : int
+          end position of file read, optional
+
+        Returns
+        -------
+        - bytes if start and end are given
+        - file object otherwise
+        """
+        slk_file = self._open(path, mode="rb")
+        if isinstance(start, int) and isinstance(end, int):
+            slk_file.seek(start)
+            return slk_file.read(end - start)
+        return slk_file
 
     def _open(
         self,
