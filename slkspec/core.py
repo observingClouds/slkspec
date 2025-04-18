@@ -441,7 +441,7 @@ class SLKFileSystem(AbstractFileSystem):
             return detail_list
         return filelist.filename.tolist()
     
-    def _cat_file(self, path, start=None, end=None):
+    def cat_file(self, path, start=None, end=None):
         """Get file content
 
         Inputs
