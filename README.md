@@ -13,7 +13,10 @@ import fsspec
 with fsspec.open("slk:///arch/project/user/file", "r") as f:
     print(f.read())
 ```
-### Loading datasets
+
+## Loading datasets
+
+### one file without manual creation of a filesystem
 
 ```python
 
@@ -24,6 +27,33 @@ url = fsspec.open("slk:////arch/project/file.nc", slk_cache="/scratch/b/b12346")
 dset = xr.open_dataset(url)
 ```
 
+### one file with manual creation of a filesystem
+
+```python
+
+import ffspec
+import xarray as xr
+
+fs = fsspec.filesystem('slk')
+f = fs.open('slk:///arch/bm0146/k204221/testing/testing05/test01.nc')
+ds = xr.open_dataset(f)
+```
+
+### multiple files
+
+```python
+
+import ffspec
+import xarray as xr
+
+fs = fsspec.filesystem('slk')
+my_files = [
+        'slk:///arch/bm0146/k204221/testing/testing14/test_netcdf_01.nc',
+        'slk:///arch/bm0146/k204221/testing/testing11/test_netcdf_a.nc',
+        'slk:///arch/bm0146/k204221/testing/testing05/test01.nc'
+]
+ds = xr.open_mfdataset([fs.open(f)  for f in my_files])
+```
 
 ## Usage in combination with preffs
 ### Installation of additional requirements

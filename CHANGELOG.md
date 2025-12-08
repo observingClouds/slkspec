@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.0
+- switched to new ``hsm`` package and recall/HSM proxy for starting and organizing recalls
+- considerably simplified code basis in the context of switching to the HSM proxy
+- default delay for the queue to collect resources is set from 2 to 5 seconds
+
+## v0.0.5
+- a few new debugging logging messages
+- improved way to set logging level for ``slkspec``
+
 ## v0.0.4
 - incremented dependency on ``pyslk`` to ``2.3.0`` => improved workflows + new required functions
 - internal ``list`` of files needed to be retrieved was changed to type ``set`` => remove duplicate files

@@ -4,10 +4,11 @@ import io
 import json
 import logging
 import os
+import random
+import string
 import threading
 import time
 import warnings
-from collections import defaultdict
 from datetime import datetime
 from getpass import getuser
 from pathlib import Path
@@ -25,17 +26,23 @@ from typing import (
     overload,
 )
 
+import hsm
 import pandas as pd
 import pyslk
 from fsspec.spec import AbstractFileSystem
 
 logger = logging.getLogger("slkspec")
-logger.setLevel(logging.INFO)
+if logger.level == 0:
+    if logging.root.level == 0:
+        logger.setLevel(logging.INFO)
+    else:
+        logger.setLevel(logging.root.level)
 
-MAX_RETRIES = 2
-MAX_PARALLEL_RECALLS = 3
-MAX_RETRIES_RECALL = 3
+# default delay for the queue to collect resources: 5 seconds
+default_queue_delay = 5
+# define queue
 FileQueue: Queue[Tuple[str, str]] = Queue(maxsize=-1)
+# other definitions
 FileInfo = TypedDict("FileInfo", {"name": str, "size": int, "type": str})
 TapeGroup = TypedDict(
     "TapeGroup",
@@ -114,7 +121,7 @@ class SLKFile(io.IOBase):
         touch: bool = False,
         file_permissions: int = 0o644,
         dir_permissions: int = 0o3775,
-        delay: int = 2,
+        delay: int = default_queue_delay,
         _lock: threading.Lock = _retrieval_lock,
         _file_queue: Queue[Tuple[str, str]] = FileQueue,
         **kwargs: Any,
@@ -155,6 +162,11 @@ class SLKFile(io.IOBase):
             return self._file
         return self._url
 
+    def url(self) -> str:
+        """HTTP URL to read this file (if it already exists)"""
+        # return self.fs.url(self.path, **kwargs)
+        return self._url
+
     def _retrieve_items(self, retrieve_files: set[tuple[str, str]]) -> None:
         """Get items from the tape archive.
         Retrieves items using given list of files and performs necessary operations.
@@ -169,19 +181,18 @@ class SLKFile(io.IOBase):
             retrieve_files=retrieve_files,
             dir_permissions=self.dir_permissions,
         )
-        # declare variables
-        files_retrieval_failed: dict[str, str] = dict()
         # start
         logger.debug(
             "Planning to retrieve %i items from cache/tape",
             len(retrieve_files_corrected),
         )
         # instantiate recall and retrieval classes
-        slk_recall: SLKRecall = SLKRecall(retrieve_files_corrected)
+        hsm_proxy: HSMProxy = HSMProxy(
+            {inp_file for inp_file, out_dir in retrieve_files_corrected}
+        )
         slk_retrieval: SLKRetrieval = SLKRetrieval(
-            slk_recall,
+            hsm_proxy,
             retrieve_files_corrected,
-            files_retrieval_failed,
             self.file_permissions,
         )
 
@@ -189,7 +200,6 @@ class SLKFile(io.IOBase):
         #  (after each retrieval, start recalls; done in retrieval class)
         iterations: int = 0
         retrieve_timer: float
-        slk_recall.start_recalls()
         # we do not generally remove files_recall_failed from to_be_retrieved because
         # some files of failed recalls might have been recalled
         while slk_retrieval.number_files_still_to_be_retrieved_realistically() > 0:
@@ -197,45 +207,45 @@ class SLKFile(io.IOBase):
             retrieve_timer = time.time()
             logger.info(
                 (
-                    "retrieve/recall iteration %i; %i requested files missing (of "
-                    + "which %i failed) => %i realistically to be retrieved. "
-                    + "Currently, trying %i files. %i recall jobs running "
-                    + "for %i files."
+                    "retrieve/recall iteration %i; %i files requested; of "
+                    + "which %i failed and %i succeeded"
                 ),
                 iterations,
                 len(slk_retrieval.files_retrieval_requested),
                 len(slk_retrieval.files_retrieval_failed),
-                (
-                    len(slk_retrieval.files_retrieval_requested)
-                    - len(slk_retrieval.files_retrieval_failed)
-                ),
-                len(slk_retrieval.files_retrieval_reasonable),
-                slk_recall.number_active_jobs(),
-                slk_recall.number_files_in_active_jobs(),
+                len(slk_retrieval.files_retrieval_succeeded),
             )
             slk_retrieval.run_retrieval()
-            if (
-                slk_retrieval.number_files_still_to_be_retrieved_realistically() > 0
-                and time.time() - retrieve_timer < 60
-            ):
-                logger.info(
-                    f"Waiting for {int(60 - (time.time() - retrieve_timer))} "
-                    + "seconds before next retrieval."
-                )
-                time.sleep(60 - (time.time() - retrieve_timer))
+            if slk_retrieval.number_files_still_to_be_retrieved_realistically() > 0:
+                # if
+                #  * still files need to be retrieved AND
+                #  * recall job is done
+                # then submit a new recall job
+                if not hsm_proxy.job_active:
+                    # new job
+                    hsm_proxy_new: HSMProxy = HSMProxy(
+                        slk_retrieval.get_files_still_to_be_retrieved_realistically(),
+                        hsm_proxy.files_broken,
+                    )
+                    # in retrieval object: overwrite old by new one
+                    slk_retrieval.hsm_proxy = hsm_proxy_new
+                    # here: overwrite old by new as well
+                    hsm_proxy = hsm_proxy_new
+                # wait some time until doing the new retrieval
+                # => sometimes we just need to wait for the recalls to be finished
+                if time.time() - retrieve_timer < 60:
+                    logger.info(
+                        f"Waiting for {int(60 - (time.time() - retrieve_timer))} "
+                        + "seconds before next retrieval."
+                    )
+                    time.sleep(60 - (time.time() - retrieve_timer))
 
         # print files which are not available
-        _write_file_lists(slk_recall, slk_retrieval, self.slk_cache)
+        _write_file_lists(hsm_proxy, slk_retrieval, self.slk_cache)
 
         # throw error if not all files were retrieved
-        if (
-            len(slk_retrieval.files_retrieval_failed)
-            + len(slk_recall.files_recall_failed)
-            > 0
-        ):
-            tmp_sum = len(slk_retrieval.files_retrieval_failed) + len(
-                slk_recall.files_recall_failed
-            )
+        tmp_sum = len(slk_retrieval.get_files_not_retrieved_due_to_issues())
+        if tmp_sum > 0:
             raise pyslk.PySlkException(
                 f"{tmp_sum} of requested"
                 + f"{len(slk_retrieval.retrieve_files_corrected)} files could not be "
@@ -362,7 +372,7 @@ class SLKFileSystem(AbstractFileSystem):
         file_permissions: int = 0o644,
         dir_permissions: int = 0o3775,
         touch: bool = False,
-        delay: int = 2,
+        delay: int = default_queue_delay,
         override: bool = False,
         **storage_options: Any,
     ):
@@ -466,582 +476,180 @@ class SLKFileSystem(AbstractFileSystem):
         )
 
 
-class SLKRecall:
-
-    def __init__(self, retrieve_files_corrected: set[tuple[str, str]]):
-        # some internal control variables
-        self.grouping_initialized = False
-        # tape_job_mapping: {"<tape_barcode>": [<job_id_1>, <job_id_2>, ...]}
-        self.tape_job_mapping: dict[str, list[int]] = defaultdict(list)
-        self.multi_tape_file_job_mapping: dict[int, list[int]] = defaultdict(list)
-        # overview over active jobs
-        self.job_tape_mapping: dict[int, str] = dict()
-        self.job_multi_tape_file_mapping: dict[int, int] = dict()
-        # store tapes and multi-tape-files to process later
-        self.file_ids_multiple_tapes: list[int] = list()
-        self.tapes: list[str]
-        # all tapes / all multi-tape-files done
-        self.all_tapes_done: bool
-        self.all_multi_tape_files_done: bool
-        # list of failed (after MAX_RETRIES_RECALL recalls) and successful recalls
-        self.tapes_success: set[str] = set()
-        self.tapes_active: set[str] = set()
-        self.tapes_failed: dict[str, str] = dict()
-        self.multi_tape_files_success: set[int] = set()
-        self.multi_tape_files_active: set[int] = set()
-        self.multi_tape_files_failed: dict[int, str] = dict()
-        # list of files which recalls failed
-        self.files_recall_failed: dict[str, str] = dict()
-        # list of files for which recall started
-        self.files_recall_started: set[str] = set()
-        self._files_recall_newly_started: set[str] = set()
-        # list of files which were cached from the beginning
-        self.files_cached_from_beginning: set[str] = set()
-        # mapping from tape to file list
-        self.tape_file_mapping: dict[str, list[int]] = defaultdict(list)
-        # initialize file-tape-grouping
-        self._initialize_grouping(retrieve_files_corrected)
-
-    def _initialize_grouping(
-        self, retrieve_files_corrected: set[tuple[str, str]]
-    ) -> None:
-        # tape grouping
-        file_tape_grouping: list[TapeGroup] = pyslk.group_files_by_tape(
-            [inp_file for inp_file, out_dir in retrieve_files_corrected]
-        )
-        # get list of all tape barcodes (volume_ids)
-        self.tapes = [
-            tape_group["barcode"]
-            for tape_group in file_tape_grouping
-            if tape_group.get("id", -1) > 0
-        ]
-        self.all_tapes_done = len(self.tapes) == 0
-        # get list of file split amongst multiple tapes
-        for tape_group in file_tape_grouping:
-            # check if there are files on multiple tapes included
-            if (
-                tape_group.get("id", 0) == -1
-                and tape_group.get("location", "") == "tape"
-            ):
-                self.file_ids_multiple_tapes = tape_group["file_ids"]
-            if (
-                tape_group.get("location", "") == "tape"
-                and tape_group.get("id", -1) > 0
-            ):
-                self.tape_file_mapping[tape_group["barcode"]] = tape_group["file_ids"]
-            if (
-                tape_group.get("id", 0) == -1
-                and tape_group.get("location", "") == "cache"
-            ):
-                self.files_cached_from_beginning = {
-                    str(file_path) for file_path in tape_group["files"]
-                }
-        self.all_multi_tape_files_done = len(self.file_ids_multiple_tapes) == 0
-        self.grouping_initialized = True
-
-    def start_recalls(self) -> None:
-        logger.debug("Recall function started")
-
-        # +----------------------------------------------------------
-        # | CHECK IF WE NEED TO RUN THIS FUNCTION
-        # +----------------------------------------------------------
-        # all_tapes_done is not set => check if conditions to set this are fulfilled =>
-        #   print user info once
-        remaining_tapes: list = [
-            tape
-            for tape in self.tapes
-            if tape not in self.tapes_success and tape not in self.tapes_failed
-        ]
-        self.all_tapes_done = len(remaining_tapes) == 0 and not self.all_tapes_done
-
-        if self.all_tapes_done:
-            logger.info("All tapes have been processed.")
-
-        # all_multi_tape_files_done is not set => check if conditions to set this are
-        #   fulfilled
-        #   => print user info once
-        remaining_split_files: list = [
-            file_id
-            for file_id in self.file_ids_multiple_tapes
-            if file_id not in self.multi_tape_files_success
-            and file_id not in self.multi_tape_files_failed
-        ]
-        self.all_multi_tape_files_done = (
-            len(remaining_split_files) == 0 and not self.all_multi_tape_files_done
-        )
-        if self.all_multi_tape_files_done:
-            logger.info("All files split amongst multiple tapes have been processed.")
-
-        # leave directly if all tapes and all multi-tape-files have been processed
-        if self.all_tapes_done and self.all_multi_tape_files_done:
-            logger.debug("Recall function has nothing to do; leaving")
-            return
-
-        # +----------------------------------------------------------
-        # | CHECK STATUS OF RUNNING JOBS
-        # +----------------------------------------------------------
-        # check if there are jobs running for whole tapes:
-        logger.info(
-            "Number of running jobs based on tape: %i",
-            len(self.job_tape_mapping),
-        )
-        if not self.all_tapes_done and len(self.job_tape_mapping) > 0:
-            self._check_normal_recall_jobs()
-
-        logger.info(
-            "Number of running jobs based on split files: %i",
-            len(self.job_multi_tape_file_mapping),
-        )
-        # check if there are jobs running for files split amongst multiple tapes:
-        if (
-            not self.all_multi_tape_files_done
-            and len(self.job_multi_tape_file_mapping) > 0
-        ):
-            self._check_split_file_recall_jobs()
-
-        # +----------------------------------------------------------
-        # | SUBMIT NEW JOBS IF NECESSARY
-        # +----------------------------------------------------------
-        # start new recalls if there are less than the max number of these jobs are
-        # running and tapes are free
-        tapes_available: list = [
-            tape
-            for tape in self.tapes
-            if (
-                tape not in self.tapes_success
-                and tape not in self.tapes_failed
-                and tape not in self.tapes_active
-            )
-        ]
-        logger.debug(
-            "Number of tapes for which recalls need to be submitted: %i",
-            len(tapes_available),
-        )
-        logger.debug(
-            "Number of running jobs: %i",
-            len(self.job_tape_mapping) + len(self.job_multi_tape_file_mapping),
-        )
-        logger.debug("Maximum allowed number of jobs: %i", MAX_PARALLEL_RECALLS)
-        if (
-            len(tapes_available) > 0
-            and len(self.job_tape_mapping) + len(self.job_multi_tape_file_mapping)
-            < MAX_PARALLEL_RECALLS
-        ):
-            self._start_normal_recall_jobs(tapes_available)
-
-        # iterate over files stored on multiple tapes each
-        multi_tape_files_available = [
-            file_id
-            for file_id in self.file_ids_multiple_tapes
-            if (
-                file_id not in self.multi_tape_files_success
-                and file_id not in self.multi_tape_files_failed
-                and file_id not in self.multi_tape_files_active
-            )
-        ]
-        logger.debug(
-            "Number of files for which recalls need to be submitted: %i",
-            len(multi_tape_files_available),
-        )
-        logger.debug(
-            "Number of running jobs: %i",
-            len(self.job_tape_mapping) + len(self.job_multi_tape_file_mapping),
-        )
-        logger.debug("Maximum allowed number of jobs: %i", MAX_PARALLEL_RECALLS)
-        if (
-            len(multi_tape_files_available) > 0
-            and len(self.job_tape_mapping) + len(self.job_multi_tape_file_mapping)
-            < MAX_PARALLEL_RECALLS
-        ):
-            self._start_split_files_recall_jobs(multi_tape_files_available)
-
-        logger.debug("Recall function ended")
-
-    def _mark_file_as_recall_running(self, file_id: int) -> None:
-        # append list of files which recall started to respective lists
-        file_name_tmp: str = str(pyslk.get_resource_path(file_id))
-        self.files_recall_started.add(file_name_tmp)
-        self._files_recall_newly_started.add(file_name_tmp)
-
-    def _check_normal_recall_jobs(self) -> None:
-        job_ids_to_be_removed: set[int] = set()
-        job_id: int
-        msg: str
-        job_status: pyslk.StatusJob
-        # iterate all ids of running jobs
-        for job_id, tape_barcode in self.job_tape_mapping.items():
-            logger.debug("Checking status of job %i (tape: %s)", job_id, tape_barcode)
-            job_status = pyslk.get_job_status(job_id)
-            logger.debug("Job status: %s", job_status.get_status_name())
-            # DIFFERENT JOB STATES
-            if job_status.is_successful():
-                # SUCCESS => mark tape as successful; remember job id to be
-                # considered as free; consider this job to be done
-                msg = f"Job {job_id} ended successfully (tape: {tape_barcode})."
-                logger.debug(msg)
-                self.tapes_active.remove(tape_barcode)
-                self.tapes_success.add(tape_barcode)
-                job_ids_to_be_removed.add(job_id)
-            elif job_status.is_queued() or job_status.is_processing():
-                # STILL WAITING OR BEING PROCESSED => do nothing; just wait further
-                msg = f"Job {job_id} not finished yet (tape: {tape_barcode})."
-                logger.debug(msg)
-                pass
-            elif job_status.is_paused():
-                # PAUSED => something is wrong => admins manually paused job BUT
-                # keep this job as it is log warning message; but do nothing else
-                msg = (
-                    f"Job {job_id} in paused state (tape: {tape_barcode}). "
-                    + "Waiting for this job."
-                )
-                logger.warning(msg)
-            elif job_status.has_failed():
-                # FAILED => something went wrong => can be restarted
-                #   DO NOT RESTART if MAX_RETRIES_RECALL of retries have been
-                # reached log warning message; but do nothing else
-                msg = (
-                    f"Job {job_id} has failed (tape: {tape_barcode}). "
-                    + f"{4 - len(self.tape_job_mapping.get(tape_barcode, list()))} "
-                    + f"of {MAX_RETRIES_RECALL} retries left"
-                )
-                logger.warning(msg)
-                self.tapes_active.remove(tape_barcode)
-                job_ids_to_be_removed.add(job_id)
-                if (
-                    len(self.tape_job_mapping.get(tape_barcode, list()))
-                    >= MAX_RETRIES_RECALL + 1
-                ):
-                    # consider this tape to fail permanently
-                    # we do this tmp_list_? in order to prevent line breaks
-                    tmp_list_a = self.tape_job_mapping[tape_barcode]
-                    msg = (
-                        "max retries reached (jobs failed: "
-                        + f"{', '.join([str(job_id) for job_id in tmp_list_a])})"
-                    )
-                    self.tapes_failed[tape_barcode] = msg
-                    logger.error(msg)
-                    # get file ids
-                    file_ids = self.tape_file_mapping[tape_barcode]
-                    for file_id in file_ids:
-                        self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
-            else:
-                # SOMETHING ELSE ...
-                # unexpected state; log warning message; but do nothing else
-                msg = (
-                    f"Job {job_id} has unexpected state (tape id: {tape_barcode}): "
-                    + f"{job_status.get_status_name()}. Do not proceed with this "
-                    + "tape."
-                )
-                logger.error(msg)
-                job_ids_to_be_removed.add(job_id)
-                self.tapes_active.remove(tape_barcode)
-                self.tapes_failed[tape_barcode] = msg
-                # get file ids
-                file_ids = self.tape_file_mapping[tape_barcode]
-                for file_id in file_ids:
-                    self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
-        # remove ids of jobs which ended
-        for job_id_to_be_removed in job_ids_to_be_removed:
-            del self.job_tape_mapping[job_id_to_be_removed]
-
-    def _check_split_file_recall_jobs(self) -> None:
-        job_ids_to_be_removed: set[int] = set()
-        job_id: int
-        msg: str
-        job_status: pyslk.StatusJob
-        job_ids_to_be_removed = set()
-        # iterate all ids of running jobs
-        for job_id, file_id in self.job_multi_tape_file_mapping.items():
-            logger.debug("Checking status of job %i (file id: %i)", job_id, file_id)
-            job_status = pyslk.get_job_status(job_id)
-            # DIFFERENT JOB STATES
-            if job_status.is_successful():
-                # SUCCESS => mark tape as successful; remember job id to be
-                # considered as free; consider this job to be done
-                msg = f"Job {job_id} ended successfully (file id: {file_id})."
-                logger.debug(msg)
-                self.multi_tape_files_success.add(file_id)
-                job_ids_to_be_removed.add(job_id)
-            elif job_status.is_queued() or job_status.is_processing():
-                # STILL WAITING OR BEING PROCESSED => do nothing; just wait further
-                msg = f"Job {job_id} not finished yet (file id: {file_id})."
-                logger.debug(msg)
-                pass
-            elif job_status.is_paused():
-                # PAUSED => something is wrong => admins manually paused job BUT
-                # keep this job as it is log warning message; but do nothing else
-                msg = (
-                    f"Job {job_id} in paused state (file id: {file_id}). Waiting"
-                    + " for this job."
-                )
-                logger.warning(msg)
-            elif job_status.has_failed():
-                # FAILED => something went wrong => can be restarted
-                #   DO NOT RESTART if MAX_RETRIES_RECALL of retries have been
-                # reached log warning message; but do nothing else
-                tmp_len = len(self.multi_tape_file_job_mapping.get(file_id, list()))
-                msg = (
-                    f"Job {job_id} has failed (file id: {file_id}). "
-                    + f"{4 - tmp_len} of "
-                    + f"{MAX_RETRIES_RECALL} retries left"
-                )
-                logger.warning(msg)
-                job_ids_to_be_removed.add(job_id)
-                if (
-                    len(self.multi_tape_file_job_mapping.get(file_id, list()))
-                    >= MAX_RETRIES_RECALL + 1
-                ):
-                    tmp_list_c = self.multi_tape_file_job_mapping[file_id]
-                    # consider this job to be done
-                    msg = (
-                        "max retries reached (jobs failed: "
-                        + f"{', '.join([str(job_id) for job_id in tmp_list_c])})"
-                    )
-                    logger.error(msg)
-                    self.multi_tape_files_failed[file_id] = msg
-                    self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
-            else:
-                # SOMETHING ELSE ...
-                # unexpected state; log warning message; but do nothing else
-                msg = (
-                    f"Job {job_id} has unexpected state (file id: {file_id}): "
-                    + f"{job_status.get_status_name()}. Do not proceed with this "
-                    + "tape."
-                )
-                logger.error(msg)
-                job_ids_to_be_removed.add(job_id)
-                self.multi_tape_files_failed[file_id] = msg
-                self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
-        # remove ids of jobs which ended
-        for job_id_to_be_removed in job_ids_to_be_removed:
-            del self.job_multi_tape_file_mapping[job_id_to_be_removed]
-
-    def _recall_tape_not_needed(self, tape: str, file_ids: list[int]) -> None:
-        logger.debug(
-            "Wanted to recall files from tape %s but files are already in "
-            + "the cache.",
-            tape,
-        )
-        self.tapes_success.add(tape)
-        # append list of files which recall started to respective lists
-        for file_id in file_ids:
-            self._mark_file_as_recall_running(file_id)
-
-    def _start_normal_recall_job(self, tape: str) -> None:
-        job_id: int
-        msg: str
-        # get file ids
-        file_ids = self.tape_file_mapping[tape]
-        if not pyslk.is_recall_needed(file_ids, resource_ids=True):
-            self._recall_tape_not_needed(tape, file_ids)
-            return
-        logger.debug("Considering tape %s for next recall.", tape)
-        # go through tape list and start new recalls
-        tape_status = pyslk.get_tape_status(tape)
-        logger.debug("Tape %s status: %s", tape, tape_status)
-        if tape_status == "BLOCKED":
-            # do nothing
-            msg = f"Tape {tape} is blocked. Skip it until next time."
-            logger.debug(msg)
-        elif tape_status == "FAILED":
-            msg = (
-                f"Tape {tape} is in failed state. Do not proceed getting "
-                + "data from this tape."
-            )
-            logger.error(msg)
-            self.tapes_failed[tape] = msg
-            # get file ids
-            for file_id in file_ids:
-                self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
-        elif tape_status == "AVAILABLE":
-            # start new job
-            msg = f"Tape {tape} is available. Starting recall from tape."
-            logger.debug(msg)
-            try:
-                # really start new job here
-                job_id = pyslk.recall_single(file_ids, resource_ids=True)
-            except pyslk.PySlkNothingToRecallError:
-                self._recall_tape_not_needed(tape, file_ids)
-                return
-            logger.info(f"Recall job started for tape {tape}: {str(job_id)}")
-            # bijective job id <-> tape
-            self.job_tape_mapping[job_id] = tape
-            # tape -> multiple job ids
-            self.tape_job_mapping[tape].append(job_id)
-            # just the active tapes
-            self.tapes_active.add(tape)
-            # append list of files which recall started to respective lists
-            for file_id in file_ids:
-                self._mark_file_as_recall_running(file_id)
+class HSMProxy:
+    def __init__(
+        self,
+        files_requested: set[str],
+        files_broken: set[str] = set(),
+        job_id: str = "",
+    ):
+        logger.debug("initializing HSMProxy class")
+        if not job_id:
+            logger.debug("received no job id")
         else:
-            # unexpected state; log warning message; but do nothing else
-            msg = (
-                f"Tape {tape} has unexpected state: {tape_status}. Do not "
-                + "proceed with this tape."
-            )
-            logger.error(msg)
-            self.tapes_failed[tape] = msg
-            # get file ids
-            file_ids = self.tape_file_mapping[tape]
-            for file_id in file_ids:
-                self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
-
-    def _start_normal_recall_jobs(self, tapes_available: list[str]) -> None:
-        # iterate over all tapes until
-        #  (a) all tapes were iterated or
-        #  (b) the maximum number of parallel recalls has been reached
-        for tape in tapes_available:
-            if (
-                len(self.job_tape_mapping) + len(self.job_multi_tape_file_mapping)
-                >= MAX_PARALLEL_RECALLS
-            ):
-                logger.debug(
-                    "Submitting no additional recalls because max number of "
-                    + "parallel recalls has been reached."
-                )
-                break
-
-            self._start_normal_recall_job(tape)
-
-    def _recall_split_files_not_needed(self, file_id: int) -> None:
-        logger.debug(
-            "Wanted to recall split file %i from tapes but file is already in "
-            + "the cache.",
-            file_id,
-        )
-        self.multi_tape_files_success.add(file_id)
-        self._mark_file_as_recall_running(file_id)
-
-    def _check_tapes_of_split_file_available(
-        self, file_id: int, tmp_tapes: list[str]
-    ) -> list[bool]:
-        tmp_tapes_available: List[bool]
-        msg: str
-        for tape in tmp_tapes:
-            # go through tape list and start new recalls
-            tape_status = pyslk.get_tape_status(tape)
-            if tape_status == "BLOCKED":
-                # do nothing
-                msg = (
-                    f"Tape {tape} is blocked (file {file_id}). Skip split "
-                    + "file until next time."
-                )
-                logger.debug(msg)
-                tmp_tapes_available.append(False)
-            elif tape_status == "FAILED":
-                msg = (
-                    f"Tape {tape} is in failed state (file {file_id}). Do not "
-                    + "proceed getting split file."
-                )
-                logger.error(msg)
-                self.multi_tape_files_failed[file_id] = msg
-                self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
-                tmp_tapes_available.append(False)
-            elif tape_status == "AVAILABLE":
-                # start new job
-                msg = f"Tape {tape} is available (file {file_id})."
-                logger.debug(msg)
-                tmp_tapes_available.append(True)
-            else:
-                # unexpected state; log warning message; but do nothing else
-                msg = (
-                    f"Tape {tape} has unexpected state (file {file_id}): "
-                    + f"{tape_status}. Do not proceed with this tape."
-                )
-                logger.error(msg)
-                self.multi_tape_files_failed[file_id] = msg
-                self.files_recall_failed[pyslk.get_resource_path(file_id)] = msg
-                tmp_tapes_available.append(False)
-        return tmp_tapes_available
-
-    def _start_split_files_recall_job(self, file_id: int) -> None:
-        job_id: int
-        msg: str
-        tmp_tapes: List[str]
-        if not pyslk.is_recall_needed(file_id, resource_ids=True):
-            self._recall_split_files_not_needed(file_id)
-            return
-        logger.debug("Considering file %i for next recall.", file_id)
-        # TEST file:
-        #  /arch/pd1309/forcings/reanalyses/ERA5/year2009/ERA5_2009_09_part5.tar
-        tmp_tapes = list()
-        for tape_id, tape_barcode in pyslk.get_resource_tape(
-            pyslk.get_resource_path(file_id)
-        ).items():
-            tmp_tapes.append(tape_barcode)
-        if len(tmp_tapes) < 2:
-            msg = (
-                f"File {file_id} is in list of split files but it seems to be "
-                + f"stored on {len(tmp_tapes)} tape."
-            )
-            logger.error(msg)
-            raise pyslk.PySlkException(msg)
-        logger.debug(f"File {file_id} on tapes: {', '.join(tmp_tapes)}")
-        tmp_tapes_available: List[bool] = self._check_tapes_of_split_file_available(
-            file_id, tmp_tapes
-        )
-
-        if all(tmp_tapes_available):
+            logger.debug(f"got job id '{job_id}'")
+        # set file list
+        self.files_requested: set[str] = files_requested
+        # declare a few other variables
+        self.files_broken: set[str] = files_broken
+        self.files_recall_active: set[str] = set()
+        self.files_recall_done: set[str] = set()
+        self.job_active: bool = False
+        job_submission: hsm.models.JobSubmission
+        # start new recall job or link to existing recall job
+        if not job_id:
+            logger.debug("attempting to start new recall job")
+            # submit new recall job
             try:
-                # really start new job here
-                job_id = pyslk.recall_single(file_id, resource_ids=True)
-            except pyslk.PySlkNothingToRecallError:
-                self._recall_split_files_not_needed(file_id)
-                return
-            # bijective job id <-> tape
-            self.job_multi_tape_file_mapping[job_id] = file_id
-            # tape -> multiple job ids
-            self.multi_tape_file_job_mapping[file_id].append(job_id)
-            # just the active tapes
-            self.multi_tape_files_active.add(file_id)
-            # mark file which recall started
-            self._mark_file_as_recall_running(file_id)
-
-    def _start_split_files_recall_jobs(self, multi_tape_files_available: list) -> None:
-        file_id: int
-        # for loop over file ids
-        for file_id in multi_tape_files_available:
-            if (
-                len(self.job_tape_mapping) + len(self.job_multi_tape_file_mapping)
-                >= MAX_PARALLEL_RECALLS
-            ):
-                logger.debug(
-                    "Submitting no additional recalls because max number of "
-                    + "parallel recalls has been reached."
+                # job might exist already => catch this error
+                job_submission = hsm.recall(list(files_requested - files_broken))
+            except hsm.errors.HSMConflictError as e:
+                logger.debug(f"Catched 'hsm.errors.HSMConflictError': {str(e)}")
+                # guess job id if job already exists
+                job_submission = hsm.recall(
+                    list(
+                        files_requested - files_broken
+                        | {
+                            "dummy_file_"
+                            + "".join(
+                                random.choices(
+                                    string.ascii_uppercase + string.digits, k=6
+                                )
+                            )
+                        }
+                    )
                 )
-                break
-            self._start_split_files_recall_job(file_id)
 
-    def recall_of_file_failed(self, file_path: str) -> bool:
-        return file_path in self.files_recall_failed.keys()
+            if "job_id" not in dir(job_submission):
+                # ERROR!
+                logger.debug("no job id returned")
+                if "message" in dir(job_submission):
+                    raise RuntimeError(
+                        "Could not submit recall job to HSM proxy with message: "
+                        + f"{job_submission.message}"
+                    )
+                else:
+                    raise RuntimeError(
+                        "Could not submit recall job to HSM proxy due to unknown "
+                        + "error. Please contact support@dkrz.de."
+                    )
+            self.job_id = job_submission.job_id
+            logger.debug(f"got job id '{self.job_id}'")
+        else:
+            # check if provided job_id actually exists
+            try:
+                hsm.status(job_id)
+            except hsm.errors.HSMNotFoundError:
+                raise RuntimeError(f"Provided job id does not exist: '${job_id}'")
+            # store job id
+            self.job_id = job_id
+        # give the job 10 seconds time to initializels
+        time.sleep(10)
+        # get job status for the first time
+        self.update_from_proxy()
 
-    def number_active_jobs(self) -> int:
-        return len(self.job_tape_mapping) + len(self.job_multi_tape_file_mapping)
+    def _extract_file_lists_from_job_status(
+        self, job_status: hsm.models.JobStatus
+    ) -> None:
+        tape_infos: list[dict] = job_status.raw["tape_info"]
+        """
+        [
+        {
+            "tape_id": 75691,
+            "tape_format": "HPSS",
+            "tape_type": "LTO6",
+            "tape_library": "StorageTek-SL8500-516000300251.1",
+            "files": [
+            {
+                "source_path": "/arch/bm0146/k204221/iow/iow_data2_004.tar",
+                "base_path": "/arch/bm0146/k204221/iow/iow_data2_004.tar",
+                "file_id": 49058705501
+            }
+            ],
+            "status": {
+            "value": 401,
+            "name": "RECALLING_IN_PROGRESS"
+            }
+        },
+        {
+            "tape_id": -1,
+            "tape_format": "",
+            "tape_type": "",
+            "tape_library": "",
+            "files": [
+            {
+                "source_path": "/arch/bm0146/k204221/iow/iow_data2_003.tar",
+                "base_path": "/arch/bm0146/k204221/iow/iow_data2_003.tar",
+                "file_id": 49058705500
+            }
+            ],
+            "status": {
+            "value": 402,
+            "name": "RECALLING_FINISHED"
+            }
+        }
+        ]
+        """
+        # go through each entry of the tape infos (this is ether the conent
+        #  of on tape or of the cache)
+        for tape_info in tape_infos:
+            if tape_info["status"]["name"] == "RECALLING_FINISHED":
+                # file ist cached
+                self.files_recall_done.update(
+                    {f["source_path"] for f in tape_info["files"]}
+                )
+            elif tape_info["status"]["name"] == "RECALLING_IN_PROGRESS":
+                # file ist cached
+                self.files_recall_active.update(
+                    {f["source_path"] for f in tape_info["files"]}
+                )
+            else:
+                raise RuntimeError(
+                    "Unexpected status appeared when recall status was checked. "
+                    + f"Status: {tape_info['status']['name']}, HTTP Code: "
+                    + f"{tape_info['status']['value']}"
+                )
 
-    def number_files_in_active_jobs(self) -> int:
-        return sum(
-            [
-                len(self.tape_file_mapping[tape])
-                for tape in self.job_tape_mapping.values()
-            ]
-        ) + len(self.job_multi_tape_file_mapping)
+    def update_from_proxy(self) -> None:
+        # get job status
+        this_job_status: hsm.models.JobStatus = hsm.status(self.job_id)
+        try:
+            logger.debug(f"updating job status (id: '{self.job_id}')")
+            logger.debug(f"  job status: '{this_job_status.status_name}'")
+            self.job_active = this_job_status.status_name == "RECALLING_IN_PROGRESS"
+            if this_job_status.broken_files is None:
+                self.files_broken = set()
+            else:
+                self.files_broken = set(this_job_status.broken_files)
+            self._extract_file_lists_from_job_status(this_job_status)
+            logger.debug(f"  #files_recall_active: '{len(self.files_recall_active)}'")
+            logger.debug(f"  #files_broken: '{len(self.files_broken)}'")
+            logger.debug(f"  #files_recall_done: '{len(self.files_recall_done)}'")
+        except TypeError as e:
+            logger.error(
+                "Command 'hsm.status' returned unexpected output which caused "
+                + f"TypeError: {str(e)}"
+            )
 
-    def get_files_recall_newly_started(self) -> set[str]:
-        output: set[str] = self._files_recall_newly_started
-        self._files_recall_newly_started = set()
-        return output
+    def check_file_broken(self, file_path: str) -> bool:
+        return file_path in self.files_broken
+
+    def check_file_recall_active(self, file_path: str) -> bool:
+        return file_path in self.files_recall_active
+
+    def check_file_recall_done(self, file_path: str) -> bool:
+        return file_path in self.files_recall_done
 
 
 class SLKRetrieval:
 
     def __init__(
         self,
-        slk_recall: SLKRecall,
+        hsm_proxy: HSMProxy,
         retrieve_files_corrected: set[tuple[str, str]],
-        files_retrieval_failed: dict[str, str],
         file_permissions: int,
     ) -> None:
-        self.slk_recall: SLKRecall = slk_recall
+        self.hsm_proxy: HSMProxy = hsm_proxy
         self.retrieve_files_corrected: set[tuple[str, str]] = retrieve_files_corrected
         # self.files_retrieval_reasonable: set[str] = set(
         #     [inp_file for inp_file, out_dir in self.retrieve_files_corrected]
@@ -1052,45 +660,45 @@ class SLKRetrieval:
         self.files_retrieval_requested: set[str] = {
             inp_file for inp_file, out_dir in self.retrieve_files_corrected
         }
-        self.files_retrieval_reasonable: set[str] = (
-            slk_recall.files_cached_from_beginning
-        )
-        self.files_retrieval_failed: dict[str, str] = files_retrieval_failed
+        self.files_retrieval_failed: dict[str, str] = dict()
         self.files_retrieval_succeeded: set[str] = set()
         self.file_permissions: int = file_permissions
-        self.recall_timer: float = time.time()
+        self.files_unexpectedly_not_cached: set[str] = set()
 
     def number_files_still_to_be_retrieved_in_total(self) -> int:
         return len(self.files_retrieval_requested)
 
-    def number_files_still_to_be_retrieved_realistically(self) -> int:
-        return len(
-            [
-                file_path
-                for file_path in self.files_retrieval_requested
-                if not (
-                    self.slk_recall.recall_of_file_failed(file_path)
-                    or file_path in self.files_retrieval_failed
-                )
-            ]
+    def get_files_still_to_be_retrieved_realistically(self) -> set[str]:
+        return (
+            self.files_retrieval_requested
+            - {f for f in self.files_retrieval_failed.keys()}
+            - self.files_retrieval_succeeded
+            - self.hsm_proxy.files_broken
         )
+
+    def get_files_not_retrieved_due_to_issues(self) -> set[str]:
+        return (
+            {f for f in self.files_retrieval_failed}
+            |
+            # use only files which were actually requested
+            # (the recall job might target more files!)
+            self.hsm_proxy.files_broken.intersection(self.files_retrieval_requested)
+        )
+
+    def number_files_still_to_be_retrieved_realistically(self) -> int:
+        return len(self.get_files_still_to_be_retrieved_realistically())
 
     def run_retrieval(self) -> None:
         logger.info("Retrieving files started")
-        retrieve_counter: int = 0
-        files_retrieval_done: set = set()
         inp_file: str
-        for inp_file in self.files_retrieval_requested:
-            # check if recalls need to be started before retrieving
-            # check every 5 minutes whether additional recalls need to be started
-            if time.time() - self.recall_timer > 300:
-                self.slk_recall.start_recalls()
-                self.recall_timer = time.time()
-            # append files which recall started to 'files_retrieval_reasonable'
-            self.files_retrieval_reasonable.update(
-                self.slk_recall.get_files_recall_newly_started()
-            )
-            if inp_file in self.files_retrieval_reasonable:
+        self.hsm_proxy.update_from_proxy()
+        files_to_be_retrieved: set = (
+            self.files_retrieval_requested
+            - self.files_retrieval_succeeded
+            - {f for f in self.files_retrieval_failed.keys()}
+        )
+        for inp_file in files_to_be_retrieved:
+            if inp_file in self.hsm_proxy.files_recall_done:
                 # skip files which do not need to be retrieved anymore
                 out_dir: str = self.files_retrieval_destination[inp_file]
                 Path(out_dir).mkdir(
@@ -1100,30 +708,22 @@ class SLKRetrieval:
                 output_dry_retrieve = pyslk.retrieve_improved(
                     inp_file, out_dir, dry_run=True, preserve_path=False
                 )
-                retrieve_counter = self._eval_output_dry_retrieval(
+                self._eval_output_dry_retrieval(
                     output_dry_retrieve,
                     inp_file,
                     out_dir,
-                    retrieve_counter,
-                    files_retrieval_done,
                 )
-        for inp_file in files_retrieval_done:
-            self.files_retrieval_requested.remove(inp_file)
-            self.files_retrieval_succeeded.add(str(inp_file))
-
-        if len(self.files_retrieval_succeeded) == 0:
-            logger.info("No files retrieved")
-        else:
-            logger.info(f"{len(self.files_retrieval_succeeded)} files retrieved")
+        logger.info(
+            f"{len(self.files_retrieval_succeeded)}/"
+            + f"{len(self.files_retrieval_requested)} files retrieved"
+        )
 
     def _eval_output_dry_retrieval(
         self,
         output_retrieve: dict,
         inp_file: str,
         out_dir: str,
-        retrieve_counter: int,
-        files_retrieval_done: set,
-    ) -> int:
+    ) -> None:
         # example output of pyslk.retrieve_improved:
         """
         {
@@ -1184,26 +784,26 @@ class SLKRetrieval:
                 Path(
                     os.path.join(os.path.expanduser(out_dir), Path(inp_file).name)
                 ).chmod(self.file_permissions)
-                self.files_retrieval_reasonable.remove(inp_file)
-                files_retrieval_done.add(inp_file)
-                retrieve_counter = retrieve_counter + 1
-                return retrieve_counter
+                self.files_retrieval_succeeded.add(inp_file)
+                # we only return in the case of a 'success'; else we proceed
+                return None
 
+        # NOTE: here is no 'elif' but 'if' because we capture this case below:
+        #           "dry run" -> 'ENVISAGED' -> "retrieve" -> 'FAILED'
         # check if file should be skipped
         if "SKIPPED" in output_retrieve:
             logger.debug(f"File {inp_file} does already exist in {out_dir}. Skip.")
-            self.files_retrieval_reasonable.remove(inp_file)
-            files_retrieval_done.add(inp_file)
+            self.files_retrieval_succeeded.add(inp_file)
         elif "FAILED" in output_retrieve:
             # check if file somehow cannot be retrieved
             if "FAILED_NOT_CACHED" in output_retrieve["FAILED"]:
-                logger.debug(f"File {inp_file} is not cached yet. Retry later.")
+                logger.debug(f"File {inp_file} is not cached although it should be.")
+                self.files_unexpectedly_not_cached.add(inp_file)
             else:
                 logger.error(
                     f"File {inp_file} cannot be retrieved for unknown reasons. "
                     + "Ignore."
                 )
-                self.files_retrieval_reasonable.remove(inp_file)
                 self.files_retrieval_failed[inp_file] = next(
                     iter(output_retrieve["FAILED"])
                 )
@@ -1216,55 +816,82 @@ class SLKRetrieval:
                 "unexpected JSON output of pyslk.retrieve_improved: "
                 + f"{json.dumps(output_retrieve)}"
             )
-            self.files_retrieval_reasonable.remove(inp_file)
-        return retrieve_counter
 
 
 def _write_file_lists(
-    slk_recall: SLKRecall, slk_retrieval: SLKRetrieval, slk_cache: Path
+    hsm_proxy: HSMProxy, slk_retrieval: SLKRetrieval, slk_cache: Path
 ) -> None:
-    missing_files: list[str] = [
-        file_path
-        for file_path in slk_retrieval.files_retrieval_reasonable
-        if file_path not in slk_recall.files_recall_failed.keys()
-        and file_path not in slk_retrieval.files_retrieval_failed.keys()
-    ]
+    # use only files which were actually requested
+    # (the recall job might target more files!)
+    files_recall_failed: set[str] = hsm_proxy.files_broken.intersection(
+        slk_retrieval.files_retrieval_requested
+    )
+    files_not_retrieved_yet: set[str] = (
+        slk_retrieval.get_files_still_to_be_retrieved_realistically()
+    )
     tmp_str: str
+    logger.debug(
+        "Start writing file lists if one of these values is larger than 0: #'files "
+        + f"retrieval reasonable' is {len(files_not_retrieved_yet)}; #'files recall "
+        + f"failed' is {len(files_recall_failed)}; #'files retrieval failed' is "
+        + f"{len(slk_retrieval.files_retrieval_failed.keys())}"
+    )
     if (
-        len(slk_retrieval.files_retrieval_reasonable) > 0
-        or len(slk_recall.files_recall_failed.keys()) > 0
+        len(files_not_retrieved_yet) > 0
+        or len(files_recall_failed) > 0
         or len(slk_retrieval.files_retrieval_failed.keys()) > 0
     ):
+        logger.debug(
+            f"#files_not_retrieved: {len(files_not_retrieved_yet)}"
+            + f"#files_failed_recall: {len(files_recall_failed)}"
+            + "#files_failed_retrieve: "
+            + f"{len(slk_retrieval.files_retrieval_failed.keys())}"
+        )
         timestamp: str = datetime.now().strftime("%Y%m%dT%H%M%S")
-        file_failed_base: str = f"files_failed_{timestamp}"
-        file_failed_recall: str = f"{file_failed_base}_recall.txt"
-        file_failed_retrieve: str = f"{file_failed_base}_retrieve.txt"
-        file_failed_other: str = f"{file_failed_base}_other.txt"
+        output_name_suffix: str = f"_{timestamp}.txt"
+        output_name_failed_recall: str = f"files_failed_recall{output_name_suffix}"
+        output_name_failed_retrieve: str = f"files_failed_retrieve{output_name_suffix}"
+        output_name_not_retrieved_yet: str = (
+            f"files_failed_retrieve{output_name_suffix}"
+        )
         logger.error(
             "One or more files could not be retrieved from the tape archive. They "
-            + f"are printed below and written into files '{file_failed_base}_*.txt'"
+            + f"are printed below and written into files '*{output_name_suffix}'"
             + f"in directory '{str(slk_cache)}'."
         )
-        if len(slk_recall.files_recall_failed) > 0:
-            tmp_str = "\n  ".join(slk_recall.files_recall_failed)
+        if len(files_recall_failed) > 0:
+            logger.debug(
+                "Write list of files which recall failed into "
+                + f"{os.path.join(slk_cache, output_name_failed_recall)}"
+            )
+            tmp_str = "\n  ".join(files_recall_failed)
             logger.error(f"files, recall failed:\n  {tmp_str}")
-            with open(os.path.join(slk_cache, file_failed_recall), "w") as f:
-                for file_path, reason in slk_recall.files_recall_failed.items():
-                    f.write(f"{file_path}: {reason}\n")
+            with open(os.path.join(slk_cache, output_name_failed_recall), "w") as f:
+                for file_path in files_recall_failed:
+                    f.write(f"{file_path}: recall failed\n")
         if len(slk_retrieval.files_retrieval_failed) > 0:
+            logger.debug(
+                "Write list of files which retrieval failed into "
+                + f"{os.path.join(slk_cache, output_name_failed_retrieve)}"
+            )
+            # TODO: does this work with dict?
             tmp_str = "\n  ".join(slk_retrieval.files_retrieval_failed)
             logger.error(f"files, retrieval failed (recall successful):\n  {tmp_str}")
-            with open(os.path.join(slk_cache, file_failed_retrieve), "w") as f:
+            with open(os.path.join(slk_cache, output_name_failed_retrieve), "w") as f:
                 for (
                     file_path,
                     reason,
                 ) in slk_retrieval.files_retrieval_failed.items():
                     f.write(f"{file_path}: {reason}\n")
-        if len(missing_files) > 0:
-            tmp_str = "\n  ".join(missing_files)
+        if len(files_not_retrieved_yet) > 0:
+            logger.debug(
+                "Write list of files which were not retrieved for other "
+                + f"reasons to {os.path.join(slk_cache, output_name_not_retrieved_yet)}"
+            )
+            tmp_str = "\n  ".join(files_not_retrieved_yet)
             logger.error(f"files, missing for other reasons:\n  {tmp_str}")
-            with open(os.path.join(slk_cache, file_failed_other), "w") as f:
-                for file_path in missing_files:
+            with open(os.path.join(slk_cache, output_name_not_retrieved_yet), "w") as f:
+                for file_path in files_not_retrieved_yet:
                     f.write(f"{file_path}: failed for unknown reasons\n")
 
 

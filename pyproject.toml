@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "fsspec implementation for StrongLink tape archive"
 readme = "README.md"
 license = {text = "MIT License"}
-authors = [{name = "Hauke Schulz", email = "haschulz@uw.edu"}]
+authors = [{name = "Hauke Schulz", email = "has@dmi.dk"}]
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
@@ -69,6 +69,13 @@ warn_redundant_casts = true
 ignore_missing_imports = true
 
 [tool.mypy-pyslk]
+ignore_missing_imports = true
+
+[tool.mypy-hsm]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["hsm"]
 ignore_missing_imports = true
 
 [tool.setuptools.packages]
